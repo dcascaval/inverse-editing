@@ -1,4 +1,5 @@
 import type { Expression } from '@/lang/ast'
+import type { LineageGraph } from '@/lang/lineage'
 
 // ---------------------------------------------------------------------------
 // Geometric primitives (plain data, used by store + renderer)
@@ -43,8 +44,8 @@ export interface Point2Val {
 
 export interface Edge2Val {
   type: 'edge2'
-  start: Point2
-  end: Point2
+  start: Point2Val
+  end: Point2Val
 }
 
 export interface RectangleVal {
@@ -82,6 +83,11 @@ export interface BuiltinFnVal {
   fn: (args: Value[]) => Value
 }
 
+export interface QueryVal {
+  type: 'query'
+  test: (candidate: Value) => boolean
+}
+
 type RawValue =
   | NumberVal
   | NullVal
@@ -92,6 +98,7 @@ type RawValue =
   | ArrayVal
   | LambdaVal
   | BuiltinFnVal
+  | QueryVal
 
 export type Value = RawValue & { sourceText?: string }
 
@@ -103,31 +110,42 @@ export const createNumber = (value: number): NumberVal => ({ type: 'number', val
 
 export const NULL: NullVal = { type: 'null' }
 
-export const createPooint = (x: number, y: number): Point2Val => ({ type: 'point2', x, y })
+export const createPoint = (x: number, y: number): Point2Val => ({ type: 'point2', x, y })
 
-export const createEdge = (start: Point2, end: Point2): Edge2Val => ({
-  type: 'edge2',
-  start,
-  end,
-})
+export function createEdge(start: Point2Val, end: Point2Val, g: LineageGraph): Edge2Val {
+  const e: Edge2Val = { type: 'edge2', start, end }
+  g.indirect([start, end], e)
+  return e
+}
 
-export function createRectangle(x: number, y: number, w: number, h: number): RectangleVal {
-  const bl: Point2Val = createPooint(x, y)
-  const br: Point2Val = createPooint(x + w, y)
-  const tl: Point2Val = createPooint(x, y + h)
-  const tr: Point2Val = createPooint(x + w, y + h)
-  const bottom: Edge2Val = createEdge(bl, br)
-  const right: Edge2Val = createEdge(br, tr)
-  const top: Edge2Val = createEdge(tr, tl)
-  const left: Edge2Val = createEdge(tl, bl)
+export function createRectangle(
+  bl: Point2Val, br: Point2Val, tl: Point2Val, tr: Point2Val,
+  g: LineageGraph,
+): RectangleVal {
+  const bottom = createEdge(bl, br, g)
+  const right = createEdge(br, tr, g)
+  const top = createEdge(tr, tl, g)
+  const left = createEdge(tl, bl, g)
+  const xs = [bl.x, br.x, tl.x, tr.x]
+  const ys = [bl.y, br.y, tl.y, tr.y]
   return {
     type: 'rectangle',
-    x, y, width: w, height: h,
+    x: Math.min(...xs), y: Math.min(...ys),
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys),
     bottomLeft: bl, bottomRight: br, topLeft: tl, topRight: tr,
     bottom, right, top, left,
     points: [bl, br, tr, tl],
     edges: [bottom, right, top, left],
   }
+}
+
+export function constructRectangle(x: number, y: number, w: number, h: number, g: LineageGraph): RectangleVal {
+  const bl = createPoint(x, y)
+  const br = createPoint(x + w, y)
+  const tl = createPoint(x, y + h)
+  const tr = createPoint(x + w, y + h)
+  return createRectangle(bl, br, tl, tr, g)
 }
 
 // ---------------------------------------------------------------------------
@@ -162,5 +180,6 @@ export function showValue(v: Value): string {
     case 'array': return `[${v.elements.map(showValue).join(', ')}]`
     case 'lambda': return `<lambda(${v.params.join(', ')})>`
     case 'builtin': return `<builtin:${v.name}>`
+    case 'query': return `<query>`
   }
 }

@@ -6,8 +6,8 @@ import {
   type StyleVal,
   createNumber,
   NULL,
-  createPooint,
-  createRectangle,
+  createPoint,
+  constructRectangle,
   createEdge,
   isTruthy,
   asNumber,
@@ -26,6 +26,7 @@ import {
   scaleAroundMatrix,
   mirrorMatrix,
 } from '@/lang/transform'
+import { LineageGraph } from '@/lang/lineage'
 
 // ---------------------------------------------------------------------------
 // Draw style
@@ -77,6 +78,9 @@ function collectDrawable(v: Value, batch: DrawBatch) {
       for (const e of v.edges) batch.edges.push(edge2(e))
       batch.polygons.push({ vertices: v.points.map(pt2) })
       break
+    case 'array':
+      for (const el of v.elements) collectDrawable(el, batch)
+      break
   }
 }
 
@@ -122,45 +126,45 @@ function isGeometric(v: Value): boolean {
   return v.type === 'point2' || v.type === 'edge2' || v.type === 'rectangle'
 }
 
-function makeTransformMethod(obj: Value, name: string): Value {
+function makeTransformMethod(obj: Value, name: string, g: LineageGraph): Value {
   return {
     type: 'builtin',
     name: `${obj.type}.${name}`,
     fn: (args: Value[]) => {
       switch (name) {
         case 'translateX':
-          return transformValue(translationMatrix(asNumber(args[0], 'translateX'), 0), obj)
+          return transformValue(translationMatrix(asNumber(args[0], 'translateX'), 0), obj, g)
         case 'translateY':
-          return transformValue(translationMatrix(0, asNumber(args[0], 'translateY')), obj)
+          return transformValue(translationMatrix(0, asNumber(args[0], 'translateY')), obj, g)
         case 'translate':
           return transformValue(
             translationMatrix(asNumber(args[0], 'translate x'), asNumber(args[1], 'translate y')),
-            obj,
+            obj, g,
           )
         case 'rotateX': {
           if (args.length >= 2 && args[0].type === 'point2') {
-            return transformValue(rotateXAroundMatrix(args[0], asNumber(args[1], 'rotateX deg')), obj)
+            return transformValue(rotateXAroundMatrix(args[0], asNumber(args[1], 'rotateX deg')), obj, g)
           }
-          return transformValue(rotateXMatrix(asNumber(args[0], 'rotateX deg')), obj)
+          return transformValue(rotateXMatrix(asNumber(args[0], 'rotateX deg')), obj, g)
         }
         case 'rotateY': {
           if (args.length >= 2 && args[0].type === 'point2') {
-            return transformValue(rotateYAroundMatrix(args[0], asNumber(args[1], 'rotateY deg')), obj)
+            return transformValue(rotateYAroundMatrix(args[0], asNumber(args[1], 'rotateY deg')), obj, g)
           }
-          return transformValue(rotateYMatrix(asNumber(args[0], 'rotateY deg')), obj)
+          return transformValue(rotateYMatrix(asNumber(args[0], 'rotateY deg')), obj, g)
         }
         case 'scale': {
           if (args.length >= 2 && args[0].type === 'point2') {
-            return transformValue(scaleAroundMatrix(args[0], asNumber(args[1], 'scale factor')), obj)
+            return transformValue(scaleAroundMatrix(args[0], asNumber(args[1], 'scale factor')), obj, g)
           }
-          return transformValue(scaleMatrix(asNumber(args[0], 'scale factor')), obj)
+          return transformValue(scaleMatrix(asNumber(args[0], 'scale factor')), obj, g)
         }
         case 'mirror': {
           if (args.length >= 2 && args[0].type === 'point2' && args[1].type === 'point2') {
-            return transformValue(mirrorMatrix(args[0], args[1]), obj)
+            return transformValue(mirrorMatrix(args[0], args[1]), obj, g)
           }
           if (args.length >= 1 && args[0].type === 'edge2') {
-            return transformValue(mirrorMatrix(args[0].start, args[0].end), obj)
+            return transformValue(mirrorMatrix(args[0].start, args[0].end), obj, g)
           }
           throw new Error('mirror: expected (edge) or (point, point)')
         }
@@ -177,9 +181,9 @@ const transformMethods = new Set([
   'scale', 'mirror',
 ])
 
-function getProperty(obj: Value, prop: string): Value {
+function getProperty(obj: Value, prop: string, g: LineageGraph): Value {
   if (isGeometric(obj) && transformMethods.has(prop)) {
-    return makeTransformMethod(obj, prop)
+    return makeTransformMethod(obj, prop, g)
   }
 
   switch (obj.type) {
@@ -188,8 +192,8 @@ function getProperty(obj: Value, prop: string): Value {
       if (prop === 'y') return createNumber(obj.y)
       break
     case 'edge2':
-      if (prop === 'start') return createPooint(obj.start.x, obj.start.y)
-      if (prop === 'end') return createPooint(obj.end.x, obj.end.y)
+      if (prop === 'start') return createPoint(obj.start.x, obj.start.y)
+      if (prop === 'end') return createPoint(obj.end.x, obj.end.y)
       break
     case 'rectangle':
       switch (prop) {
@@ -220,30 +224,41 @@ function getProperty(obj: Value, prop: string): Value {
 // Evaluate
 // ---------------------------------------------------------------------------
 
-function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer): Value {
+function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGraph): Value {
   switch (expr.type) {
     case 'Literal':
       return createNumber(expr.value)
 
     case 'Variable': {
       const v = ctx.lookup(expr.name)
-      // Undefined variables resolve to their name as a string
       if (v === undefined) return { type: 'null', sourceText: expr.name }
       return v
     }
 
     case 'Assignment': {
-      const val = evaluate(expr.expression, ctx, buf)
+      const val = evaluate(expr.expression, ctx, buf, g)
       ctx.assign(expr.target, val)
       return val
     }
 
     case 'BinOp': {
-      const lhs = evaluate(expr.lhs, ctx, buf)
-      const rhs = evaluate(expr.rhs, ctx, buf)
+      const lhs = evaluate(expr.lhs, ctx, buf, g)
+      const rhs = evaluate(expr.rhs, ctx, buf, g)
 
-      if (expr.op === 'and') return isTruthy(lhs) ? rhs : lhs
-      if (expr.op === 'or') return isTruthy(lhs) ? lhs : rhs
+      if (expr.op === 'and') {
+        if (lhs.type === 'query' && rhs.type === 'query') {
+          const lt = lhs.test, rt = rhs.test
+          return { type: 'query', test: (c) => lt(c) && rt(c) }
+        }
+        return isTruthy(lhs) ? rhs : lhs
+      }
+      if (expr.op === 'or') {
+        if (lhs.type === 'query' && rhs.type === 'query') {
+          const lt = lhs.test, rt = rhs.test
+          return { type: 'query', test: (c) => lt(c) || rt(c) }
+        }
+        return isTruthy(lhs) ? lhs : rhs
+      }
 
       const l = asNumber(lhs, `left of '${expr.op}'`)
       const r = asNumber(rhs, `right of '${expr.op}'`)
@@ -259,7 +274,7 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer): Value {
     }
 
     case 'UnaryOp': {
-      const arg = evaluate(expr.argument, ctx, buf)
+      const arg = evaluate(expr.argument, ctx, buf, g)
       const n = asNumber(arg, `unary '${expr.op}'`)
       if (expr.op === '-') return createNumber(-n)
       if (expr.op === '+') return createNumber(+n)
@@ -267,13 +282,13 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer): Value {
     }
 
     case 'PropertyAccess': {
-      const obj = evaluate(expr.object, ctx, buf)
-      return getProperty(obj, expr.property)
+      const obj = evaluate(expr.object, ctx, buf, g)
+      return getProperty(obj, expr.property, g)
     }
 
     case 'Apply': {
-      const callee = evaluate(expr.callee, ctx, buf)
-      const args = expr.args.map((a) => evaluate(a, ctx, buf))
+      const callee = evaluate(expr.callee, ctx, buf, g)
+      const args = expr.args.map((a) => evaluate(a, ctx, buf, g))
 
       if (callee.type === 'builtin') return callee.fn(args)
 
@@ -283,7 +298,7 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer): Value {
           for (let i = 0; i < callee.params.length; i++) {
             ctx.assign(callee.params[i], args[i] ?? NULL)
           }
-          return evaluate(callee.body, ctx, buf)
+          return evaluate(callee.body, ctx, buf, g)
         } finally {
           ctx.pop()
         }
@@ -302,7 +317,7 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer): Value {
     case 'Block': {
       let result: Value = NULL
       for (const stmt of expr.statements) {
-        result = evaluate(stmt, ctx, buf)
+        result = evaluate(stmt, ctx, buf, g)
       }
       return result
     }
@@ -323,32 +338,33 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer): Value {
 // Builtins
 // ---------------------------------------------------------------------------
 
-function makeBuiltins(buf: DrawBuffer): Scope {
+function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
   const scope: Scope = new Map()
 
   scope.set('pt', overloaded('pt', [
-    sig([Num, Num], (x, y) => createPooint(x.value, y.value)),
+    sig([Num, Num], (x, y) => createPoint(x.value, y.value)),
   ]))
 
   scope.set('rect', overloaded('rect', [
     sig([Num, Num, Num, Num], (x, y, w, h) =>
-      createRectangle(x.value, y.value, w.value, h.value)),
+      constructRectangle(x.value, y.value, w.value, h.value, g)),
     sig([Pt2, Pt2], (p1, p2) =>
-      createRectangle(
+      constructRectangle(
         Math.min(p1.x, p2.x),
         Math.min(p1.y, p2.y),
         Math.abs(p2.x - p1.x),
         Math.abs(p2.y - p1.y),
+        g,
       )),
   ]))
 
   scope.set('edge', overloaded('edge', [
-    sig([Pt2, Pt2], (p1, p2) => createEdge(p1, p2)),
+    sig([Pt2, Pt2], (p1, p2) => createEdge(p1, p2, g)),
     sig([Num, Num, Num, Num], (x1, y1, x2, y2) =>
-      createEdge({ x: x1.value, y: y1.value }, { x: x2.value, y: y2.value })),
+      createEdge(createPoint(x1.value, y1.value), createPoint(x2.value, y2.value), g)),
   ]))
 
-  // Style builtins — accept null values with sourceText (e.g. color(red))
+  // Style builtins
   scope.set('color', {
     type: 'builtin',
     name: 'color',
@@ -398,6 +414,75 @@ function makeBuiltins(buf: DrawBuffer): Scope {
     },
   })
 
+  // -------------------------------------------------------------------------
+  // Lineage query builtins
+  // -------------------------------------------------------------------------
+
+  scope.set('from', {
+    type: 'builtin',
+    name: 'from',
+    fn: (args: Value[]): Value => ({
+      type: 'query',
+      test: (candidate) =>
+        g.isReachableAll(candidate, args.map((a) => new Set([a])), true),
+    }),
+  })
+
+  scope.set('fromAny', {
+    type: 'builtin',
+    name: 'fromAny',
+    fn: (args: Value[]): Value => ({
+      type: 'query',
+      test: (candidate) => g.isReachable(candidate, new Set(args), true),
+    }),
+  })
+
+  scope.set('derivedFrom', {
+    type: 'builtin',
+    name: 'derivedFrom',
+    fn: (args: Value[]): Value => ({
+      type: 'query',
+      test: (candidate) =>
+        g.isReachableAll(candidate, args.map((a) => new Set([a])), false),
+    }),
+  })
+
+  scope.set('derivedFromAny', {
+    type: 'builtin',
+    name: 'derivedFromAny',
+    fn: (args: Value[]): Value => ({
+      type: 'query',
+      test: (candidate) => g.isReachable(candidate, new Set(args), false),
+    }),
+  })
+
+  scope.set('not', {
+    type: 'builtin',
+    name: 'not',
+    fn: (args: Value[]): Value => {
+      if (args.length !== 1 || args[0].type !== 'query')
+        throw new Error('not: expected a query predicate')
+      const inner = args[0].test
+      return { type: 'query', test: (c) => !inner(c) }
+    },
+  })
+
+  scope.set('query', {
+    type: 'builtin',
+    name: 'query',
+    fn: (args: Value[]): Value => {
+      const collection = args[0]
+      const predicate = args[1]
+      if (collection.type !== 'array')
+        throw new Error('query: first argument must be an array')
+      if (predicate.type !== 'query')
+        throw new Error('query: second argument must be a query predicate')
+      const test = predicate.test
+      const filtered = collection.elements.filter((el) => test(el))
+      return { type: 'array', elements: filtered }
+    },
+  })
+
   return scope
 }
 
@@ -407,6 +492,7 @@ function makeBuiltins(buf: DrawBuffer): Scope {
 
 export interface ExecutionResult {
   drawBuffer: DrawBuffer
+  lineage: LineageGraph
   error: Error | null
 }
 
@@ -415,7 +501,8 @@ export function executeProgram(
   parameterValues?: Map<string, number>,
 ): ExecutionResult {
   const buf: DrawBuffer = { batches: [] }
-  const builtins = makeBuiltins(buf)
+  const g = new LineageGraph()
+  const builtins = makeBuiltins(buf, g)
   const ctx = new Context(builtins)
 
   // Inject parameter values
@@ -429,7 +516,7 @@ export function executeProgram(
   let error: Error | null = null
   for (const stmt of program.statements) {
     try {
-      evaluate(stmt, ctx, buf)
+      evaluate(stmt, ctx, buf, g)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       error = new Error(`${msg}\n  in: ${show(stmt)}`)
@@ -437,5 +524,5 @@ export function executeProgram(
     }
   }
 
-  return { drawBuffer: buf, error }
+  return { drawBuffer: buf, lineage: g, error }
 }

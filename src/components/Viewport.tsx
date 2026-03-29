@@ -36,7 +36,8 @@ function BatchPolygons({ batch }: { batch: DrawBatch }) {
     <mesh geometry={geometry}>
       <meshBasicMaterial
         color={style.fill}
-        transparent={opacity < 1}
+        transparent
+        depthWrite={false}
         opacity={opacity}
         side={THREE.DoubleSide}
       />
@@ -68,7 +69,8 @@ function BatchEdges({ batch }: { batch: DrawBatch }) {
       segments
       color={color}
       lineWidth={2}
-      transparent={opacity < 1}
+      transparent
+      depthWrite={false}
       opacity={opacity}
       dashed={dashed}
       dashSize={0.5}
@@ -107,7 +109,8 @@ function BatchPoints({ batch }: { batch: DrawBatch }) {
         color={color}
         size={4}
         sizeAttenuation={false}
-        transparent={opacity < 1}
+        transparent
+        depthWrite={false}
         opacity={opacity}
       />
     </points>
@@ -120,7 +123,7 @@ function Scene() {
   return (
     <>
       {scene.map((batch, i) => (
-        <group key={i}>
+        <group key={i} renderOrder={i}>
           <BatchPolygons batch={batch} />
           <BatchEdges batch={batch} />
           <BatchPoints batch={batch} />

@@ -1,30 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { parse } from '@/lang/parser'
-import { executeProgram } from '@/lang/interpreter'
-import type { Point2, Edge2 } from '@/lang/values'
-
-function run(src: string, paramValues?: Map<string, number>) {
-  const program = parse(src)
-  return executeProgram(program, paramValues)
-}
-
-/** Flatten all batches into a single points/edges list for simple assertions */
-function drawn(src: string) {
-  const { drawBuffer } = run(src)
-  const points: Point2[] = []
-  const edges: Edge2[] = []
-  for (const b of drawBuffer.batches) {
-    points.push(...b.points)
-    edges.push(...b.edges)
-  }
-  return { points, edges, batches: drawBuffer.batches }
-}
-
-function runOk(src: string) {
-  const result = run(src)
-  expect(result.error).toBeNull()
-  return result
-}
+import type { Point2 } from '@/lang/values'
+import { run, runOk, drawn } from './lib'
 
 // ---------------------------------------------------------------------------
 // Basic arithmetic & variables

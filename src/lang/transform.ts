@@ -5,9 +5,11 @@ import {
   type Point2Val,
   type Edge2Val,
   type RectangleVal,
-  createPooint,
+  createPoint,
   createEdge,
+  createRectangle,
 } from '@/lang/values'
+import type { LineageGraph } from '@/lang/lineage'
 
 // ---------------------------------------------------------------------------
 // We use three's Matrix3 for 2D affine transforms.
@@ -83,46 +85,43 @@ export function mirrorMatrix(p1: Point2, p2: Point2): Matrix3 {
 }
 
 // ---------------------------------------------------------------------------
-// Transform geometric values (non-mutating)
+// Transform geometric values (non-mutating, with optional lineage tracking)
 // ---------------------------------------------------------------------------
 
-function transformPt(m: Matrix3, p: Point2Val): Point2Val {
+function transformPt(m: Matrix3, p: Point2Val, g: LineageGraph): Point2Val {
   const tp = applyToPoint(m, p)
-  return createPooint(tp.x, tp.y)
+  const result = createPoint(tp.x, tp.y)
+  g.direct(p, result)
+  return result
 }
 
-function transformEdge(m: Matrix3, e: Edge2Val): Edge2Val {
-  return createEdge(applyToPoint(m, e.start), applyToPoint(m, e.end))
+function transformEdge(m: Matrix3, e: Edge2Val, g: LineageGraph): Edge2Val {
+  const start = transformPt(m, e.start, g)
+  const end = transformPt(m, e.end, g)
+  const result = createEdge(start, end, g)
+  g.direct(e, result)
+  return result
 }
 
-function transformRectangle(m: Matrix3, r: RectangleVal): RectangleVal {
-  const bl = transformPt(m, r.bottomLeft)
-  const br = transformPt(m, r.bottomRight)
-  const tl = transformPt(m, r.topLeft)
-  const tr = transformPt(m, r.topRight)
-  const bottom = createEdge(bl, br)
-  const right = createEdge(br, tr)
-  const top = createEdge(tr, tl)
-  const left = createEdge(tl, bl)
-  const xs = [bl.x, br.x, tl.x, tr.x]
-  const ys = [bl.y, br.y, tl.y, tr.y]
-  const minX = Math.min(...xs), maxX = Math.max(...xs)
-  const minY = Math.min(...ys), maxY = Math.max(...ys)
-  return {
-    type: 'rectangle',
-    x: minX, y: minY, width: maxX - minX, height: maxY - minY,
-    bottomLeft: bl, bottomRight: br, topLeft: tl, topRight: tr,
-    bottom, right, top, left,
-    points: [bl, br, tr, tl],
-    edges: [bottom, right, top, left],
-  }
+function transformRectangle(m: Matrix3, r: RectangleVal, g: LineageGraph): RectangleVal {
+  const bl = transformPt(m, r.bottomLeft, g)
+  const br = transformPt(m, r.bottomRight, g)
+  const tl = transformPt(m, r.topLeft, g)
+  const tr = transformPt(m, r.topRight, g)
+  const result = createRectangle(bl, br, tl, tr, g)
+  g.direct(r.bottom, result.bottom)
+  g.direct(r.right, result.right)
+  g.direct(r.top, result.top)
+  g.direct(r.left, result.left)
+  g.direct(r, result)
+  return result
 }
 
-export function transformValue(m: Matrix3, v: Value): Value {
+export function transformValue(m: Matrix3, v: Value, g: LineageGraph): Value {
   switch (v.type) {
-    case 'point2': return transformPt(m, v)
-    case 'edge2': return transformEdge(m, v)
-    case 'rectangle': return transformRectangle(m, v)
+    case 'point2': return transformPt(m, v, g)
+    case 'edge2': return transformEdge(m, v, g)
+    case 'rectangle': return transformRectangle(m, v, g)
     default: throw new Error(`Cannot transform ${v.type}`)
   }
 }

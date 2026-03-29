@@ -1,0 +1,93 @@
+import type { Value } from '@/lang/values'
+
+export type EdgeType = 'direct' | 'indirect'
+
+export class LineageGraph {
+  // child → parent maps (traversal goes from candidate toward ancestors)
+  private directParents = new Map<Value, Value[]>()
+  private allParents = new Map<Value, Value[]>()
+
+  direct(parents: Value | Value[], children: Value | Value[]) {
+    this.link(parents, children, 'direct')
+  }
+
+  indirect(parents: Value | Value[], children: Value | Value[]) {
+    this.link(parents, children, 'indirect')
+  }
+
+  link(
+    parents: Value | Value[],
+    children: Value | Value[],
+    type: EdgeType,
+  ) {
+    const ps = Array.isArray(parents) ? parents : [parents]
+    const cs = Array.isArray(children) ? children : [children]
+    for (const c of cs) {
+      for (const p of ps) {
+        this.addTo(this.allParents, c, p)
+        if (type === 'direct') {
+          this.addTo(this.directParents, c, p)
+        }
+      }
+    }
+  }
+
+  private addTo(map: Map<Value, Value[]>, key: Value, val: Value) {
+    let list = map.get(key)
+    if (!list) {
+      list = []
+      map.set(key, list)
+    }
+    list.push(val)
+  }
+
+  /** BFS toward ancestors: true if ANY target is reachable from start */
+  isReachable(start: Value, targets: Set<Value>, directOnly: boolean): boolean {
+    if (targets.has(start)) return true
+    const parents = directOnly ? this.directParents : this.allParents
+    const seen = new Set<Value>()
+    const queue: Value[] = [start]
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      if (seen.has(current)) continue
+      seen.add(current)
+      const ps = parents.get(current)
+      if (!ps) continue
+      for (const p of ps) {
+        if (targets.has(p)) return true
+        if (!seen.has(p)) queue.push(p)
+      }
+    }
+    return false
+  }
+
+  /** BFS toward ancestors: true if ALL target sets have at least one reachable element */
+  isReachableAll(start: Value, targetSets: Set<Value>[], directOnly: boolean): boolean {
+    if (targetSets.length === 0) return true
+    const parents = directOnly ? this.directParents : this.allParents
+    const unseen = new Set(targetSets)
+    for (const ts of unseen) {
+      if (ts.has(start)) unseen.delete(ts)
+    }
+    if (unseen.size === 0) return true
+    const seen = new Set<Value>()
+    const queue: Value[] = [start]
+    while (queue.length > 0 && unseen.size > 0) {
+      const current = queue.shift()!
+      if (seen.has(current)) continue
+      seen.add(current)
+      const ps = parents.get(current)
+      if (!ps) continue
+      for (const p of ps) {
+        if (!seen.has(p)) {
+          for (const ts of unseen) {
+            if (ts.has(p)) unseen.delete(ts)
+          }
+          if (unseen.size === 0) return true
+          queue.push(p)
+        }
+      }
+    }
+    return unseen.size === 0
+  }
+}
