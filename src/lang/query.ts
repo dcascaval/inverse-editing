@@ -8,13 +8,13 @@ import { containedElements } from '@/lang/lineage'
 
 export type FromQuery = {
   kind: 'from'
-  parents: Value[]
+  sources: Value[]
   direct: boolean
 }
 
 export type FromAnyQuery = {
   kind: 'fromAny'
-  parents: Value[]
+  sources: Value[]
   direct: boolean
 }
 
@@ -52,16 +52,16 @@ export type Query =
 // Constructors
 
 export const from = (parents: Value[]): Query =>
-  ({ kind: 'from', parents, direct: true })
+  ({ kind: 'from', sources: parents, direct: true })
 
 export const fromAny = (parents: Value[]): Query =>
-  ({ kind: 'fromAny', parents, direct: true })
+  ({ kind: 'fromAny', sources: parents, direct: true })
 
 export const derivedFrom = (parents: Value[]): Query =>
-  ({ kind: 'from', parents, direct: false })
+  ({ kind: 'from', sources: parents, direct: false })
 
 export const derivedFromAny = (parents: Value[]): Query =>
-  ({ kind: 'fromAny', parents, direct: false })
+  ({ kind: 'fromAny', sources: parents, direct: false })
 
 export const contains = (inner: Query): Query =>
   ({ kind: 'contains', inner })
@@ -81,13 +81,13 @@ function matches(candidate: Value, q: Query, g: LineageGraph): boolean {
     case 'from':
       return g.isReachableAll(
         candidate,
-        q.parents.map((a) => new Set(containedElements(a))),
+        q.sources.map((a) => new Set(containedElements(a))),
         q.direct,
       )
     case 'fromAny':
       return g.isReachable(
         candidate,
-        new Set(q.parents.flatMap(containedElements)),
+        new Set(q.sources.flatMap(containedElements)),
         q.direct,
       )
     case 'contains':
@@ -113,12 +113,12 @@ export function showQuery(q: Query): string {
   switch (q.kind) {
     case 'from':
       return q.direct
-        ? `from(${showParents(q.parents)})`
-        : `derivedFrom(${showParents(q.parents)})`
+        ? `from(${showParents(q.sources)})`
+        : `derivedFrom(${showParents(q.sources)})`
     case 'fromAny':
       return q.direct
-        ? `fromAny(${showParents(q.parents)})`
-        : `derivedFromAny(${showParents(q.parents)})`
+        ? `fromAny(${showParents(q.sources)})`
+        : `derivedFromAny(${showParents(q.sources)})`
     case 'contains':
       return `contains(${showQuery(q.inner)})`
     case 'not':

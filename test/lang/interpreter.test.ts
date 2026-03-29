@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Point2 } from '@/lang/values'
-import { run, runOk, drawn } from './lib'
+import { run, runOk, drawn } from '@test/lang/lib'
 
 
 // Basic arithmetic & variables

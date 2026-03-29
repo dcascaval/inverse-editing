@@ -15,7 +15,7 @@ export function containedElements(v: Value): Value[] {
 }
 
 export class LineageGraph {
-  // child → parent maps (traversal goes from candidate toward ancestors)
+  // child -> parent maps (traversal goes from candidate toward ancestors)
   private directParents = new Map<Value, Value[]>()
   private allParents = new Map<Value, Value[]>()
 
