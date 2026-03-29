@@ -26,7 +26,7 @@ import {
   scaleAroundMatrix,
   mirrorMatrix,
 } from '@/lang/transform'
-import { LineageGraph } from '@/lang/lineage'
+import { LineageGraph, containedElements } from '@/lang/lineage'
 
 // ---------------------------------------------------------------------------
 // Draw style
@@ -424,7 +424,7 @@ function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
     fn: (args: Value[]): Value => ({
       type: 'query',
       test: (candidate) =>
-        g.isReachableAll(candidate, args.map((a) => new Set([a])), true),
+        g.isReachableAll(candidate, args.map((a) => new Set(containedElements(a))), true),
     }),
   })
 
@@ -433,7 +433,8 @@ function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
     name: 'fromAny',
     fn: (args: Value[]): Value => ({
       type: 'query',
-      test: (candidate) => g.isReachable(candidate, new Set(args), true),
+      test: (candidate) =>
+        g.isReachable(candidate, new Set(args.flatMap(containedElements)), true),
     }),
   })
 
@@ -443,7 +444,7 @@ function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
     fn: (args: Value[]): Value => ({
       type: 'query',
       test: (candidate) =>
-        g.isReachableAll(candidate, args.map((a) => new Set([a])), false),
+        g.isReachableAll(candidate, args.map((a) => new Set(containedElements(a))), false),
     }),
   })
 
@@ -452,7 +453,8 @@ function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
     name: 'derivedFromAny',
     fn: (args: Value[]): Value => ({
       type: 'query',
-      test: (candidate) => g.isReachable(candidate, new Set(args), false),
+      test: (candidate) =>
+        g.isReachable(candidate, new Set(args.flatMap(containedElements)), false),
     }),
   })
 

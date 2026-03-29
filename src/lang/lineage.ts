@@ -2,6 +2,18 @@ import type { Value } from '@/lang/values'
 
 export type EdgeType = 'direct' | 'indirect'
 
+/** Returns the value and all elements it structurally contains. */
+export function containedElements(v: Value): Value[] {
+  switch (v.type) {
+    case 'edge2':
+      return [v, v.start, v.end]
+    case 'rectangle':
+      return [v, ...v.points, ...v.edges]
+    default:
+      return [v]
+  }
+}
+
 export class LineageGraph {
   // child → parent maps (traversal goes from candidate toward ancestors)
   private directParents = new Map<Value, Value[]>()

@@ -27,7 +27,7 @@ draw(query(b.edges, from(a.bottom)))`)
 a = rect(0, 0, 10, 10)
 b = a.translate(20, 0)
 draw(query(b.points, from(a.bottom)))`)
-    expect(count).toBe(0)
+    expect(count).toBe(2)
   })
 
   it('fromAny() matches points reachable from any arg', () => {
@@ -44,6 +44,38 @@ a = rect(0, 0, 10, 10)
 b = a.translate(20, 0)
 c = b.scale(2)
 draw(query(c.points, from(a.bottomLeft)))`)
+    expect(count).toBe(1)
+  })
+
+  it('from() edge→points via containment: edge contains its endpoints', () => {
+    const count = drawnPointCount(`parameters {}
+r0 = rect(0, 0, 10, 10)
+r1 = r0.translate(20, 20)
+draw(query(r1.points, from(r0.top)))`)
+    expect(count).toBe(2)
+  })
+
+  it('from() rect→points via containment: rect contains all its points', () => {
+    const count = drawnPointCount(`parameters {}
+r0 = rect(0, 0, 10, 10)
+r1 = r0.translate(20, 20)
+draw(query(r1.points, from(r0)))`)
+    expect(count).toBe(4)
+  })
+
+  it('from() rect→edges via containment: rect contains all its edges', () => {
+    const count = drawnEdgeCount(`parameters {}
+r0 = rect(0, 0, 10, 10)
+r1 = r0.translate(20, 20)
+draw(query(r1.edges, from(r0)))`)
+    expect(count).toBe(4)
+  })
+
+  it('from() point containment is just itself', () => {
+    const count = drawnPointCount(`parameters {}
+r0 = rect(0, 0, 10, 10)
+r1 = r0.translate(20, 20)
+draw(query(r1.points, from(r0.bottomLeft)))`)
     expect(count).toBe(1)
   })
 })
