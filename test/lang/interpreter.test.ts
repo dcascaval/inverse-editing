@@ -1,19 +1,25 @@
 import { describe, it, expect } from 'vitest'
 import { parse } from '@/lang/parser'
 import { executeProgram } from '@/lang/interpreter'
-import type { Value } from '@/lang/values'
+import type { Point2, Edge2 } from '@/lang/values'
 
 function run(src: string, paramValues?: Map<string, number>) {
   const program = parse(src)
   return executeProgram(program, paramValues)
 }
 
-// Helper: run a program, return the draw buffer
+/** Flatten all batches into a single points/edges list for simple assertions */
 function drawn(src: string) {
-  return run(src).drawBuffer
+  const { drawBuffer } = run(src)
+  const points: Point2[] = []
+  const edges: Edge2[] = []
+  for (const b of drawBuffer.batches) {
+    points.push(...b.points)
+    edges.push(...b.edges)
+  }
+  return { points, edges, batches: drawBuffer.batches }
 }
 
-// Helper: run and expect no error
 function runOk(src: string) {
   const result = run(src)
   expect(result.error).toBeNull()
@@ -26,9 +32,9 @@ function runOk(src: string) {
 
 describe('arithmetic', () => {
   it('draws nothing from pure arithmetic', () => {
-    const buf = drawn('parameters {}\nx = 2 + 3')
-    expect(buf.points).toHaveLength(0)
-    expect(buf.edges).toHaveLength(0)
+    const { points, edges } = drawn('parameters {}\nx = 2 + 3')
+    expect(points).toHaveLength(0)
+    expect(edges).toHaveLength(0)
   })
 
   it('evaluates without error', () => {
@@ -54,11 +60,11 @@ describe('arithmetic', () => {
 
 describe('parameters', () => {
   it('injects parameter mid values into context', () => {
-    const result = runOk(`parameters {
+    const { points } = drawn(`parameters {
   r: 10
 }
 draw(pt(r, 0))`)
-    expect(result.drawBuffer.points).toEqual([{ x: 10, y: 0 }])
+    expect(points).toEqual([{ x: 10, y: 0 }])
   })
 
   it('uses provided parameter values over mid', () => {
@@ -67,15 +73,16 @@ draw(pt(r, 0))`)
       new Map([['r', 20]]),
     )
     expect(result.error).toBeNull()
-    expect(result.drawBuffer.points).toEqual([{ x: 20, y: 0 }])
+    const pts = result.drawBuffer.batches.flatMap((b) => b.points)
+    expect(pts).toEqual([{ x: 20, y: 0 }])
   })
 
   it('parses parameter bounds', () => {
-    const result = runOk(`parameters {
+    const { points } = drawn(`parameters {
   x: 1 < 5 < 10
 }
 draw(pt(x, 0))`)
-    expect(result.drawBuffer.points).toEqual([{ x: 5, y: 0 }])
+    expect(points).toEqual([{ x: 5, y: 0 }])
   })
 })
 
@@ -85,13 +92,13 @@ draw(pt(x, 0))`)
 
 describe('pt()', () => {
   it('creates a point and draws it', () => {
-    const buf = drawn('parameters {}\ndraw(pt(3, 4))')
-    expect(buf.points).toEqual([{ x: 3, y: 4 }])
+    const { points } = drawn('parameters {}\ndraw(pt(3, 4))')
+    expect(points).toEqual([{ x: 3, y: 4 }])
   })
 
   it('supports expressions as arguments', () => {
-    const buf = drawn('parameters {}\ndraw(pt(1 + 2, 3 * 4))')
-    expect(buf.points).toEqual([{ x: 3, y: 12 }])
+    const { points } = drawn('parameters {}\ndraw(pt(1 + 2, 3 * 4))')
+    expect(points).toEqual([{ x: 3, y: 12 }])
   })
 })
 
@@ -101,38 +108,22 @@ describe('pt()', () => {
 
 describe('rect()', () => {
   it('creates rectangle from x,y,w,h and draws edges', () => {
-    const buf = drawn('parameters {}\ndraw(rect(0, 0, 10, 5))')
-    expect(buf.edges).toHaveLength(4)
-    expect(buf.points).toHaveLength(0) // rect only draws edges
+    const { edges, points } = drawn('parameters {}\ndraw(rect(0, 0, 10, 5))')
+    expect(edges).toHaveLength(4)
+    expect(points).toHaveLength(0)
   })
 
   it('creates rectangle from two points', () => {
-    const buf = drawn('parameters {}\ndraw(rect(pt(0,0), pt(10,5)))')
-    expect(buf.edges).toHaveLength(4)
+    const { edges } = drawn('parameters {}\ndraw(rect(pt(0,0), pt(10,5)))')
+    expect(edges).toHaveLength(4)
   })
 
   it('edge coordinates are correct', () => {
-    const buf = drawn('parameters {}\ndraw(rect(0, 0, 10, 5))')
-    // bottom: (0,0) -> (10,0)
-    expect(buf.edges[0]).toEqual({
-      start: { x: 0, y: 0 },
-      end: { x: 10, y: 0 },
-    })
-    // right: (10,0) -> (10,5)
-    expect(buf.edges[1]).toEqual({
-      start: { x: 10, y: 0 },
-      end: { x: 10, y: 5 },
-    })
-    // top: (10,5) -> (0,5)
-    expect(buf.edges[2]).toEqual({
-      start: { x: 10, y: 5 },
-      end: { x: 0, y: 5 },
-    })
-    // left: (0,5) -> (0,0)
-    expect(buf.edges[3]).toEqual({
-      start: { x: 0, y: 5 },
-      end: { x: 0, y: 0 },
-    })
+    const { edges } = drawn('parameters {}\ndraw(rect(0, 0, 10, 5))')
+    expect(edges[0]).toEqual({ start: { x: 0, y: 0 }, end: { x: 10, y: 0 } })
+    expect(edges[1]).toEqual({ start: { x: 10, y: 0 }, end: { x: 10, y: 5 } })
+    expect(edges[2]).toEqual({ start: { x: 10, y: 5 }, end: { x: 0, y: 5 } })
+    expect(edges[3]).toEqual({ start: { x: 0, y: 5 }, end: { x: 0, y: 0 } })
   })
 })
 
@@ -142,47 +133,44 @@ describe('rect()', () => {
 
 describe('property access', () => {
   it('accesses point x and y', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 p = pt(3, 4)
 draw(pt(p.x, p.y))`)
-    expect(buf.points).toEqual([{ x: 3, y: 4 }])
+    expect(points).toEqual([{ x: 3, y: 4 }])
   })
 
   it('accesses rectangle vertices', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 r = rect(0, 0, 10, 5)
 draw(r.topLeft)
 draw(r.bottomRight)`)
-    expect(buf.points).toEqual([
+    expect(points).toEqual([
       { x: 0, y: 5 },
       { x: 10, y: 0 },
     ])
   })
 
   it('accesses rectangle named edges', () => {
-    const buf = drawn(`parameters {}
+    const { edges } = drawn(`parameters {}
 r = rect(0, 0, 10, 5)
 draw(r.top)`)
-    expect(buf.edges).toHaveLength(1)
-    expect(buf.edges[0]).toEqual({
-      start: { x: 10, y: 5 },
-      end: { x: 0, y: 5 },
-    })
+    expect(edges).toHaveLength(1)
+    expect(edges[0]).toEqual({ start: { x: 10, y: 5 }, end: { x: 0, y: 5 } })
   })
 
   it('accesses rectangle width/height', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 r = rect(1, 2, 30, 40)
 draw(pt(r.width, r.height))`)
-    expect(buf.points).toEqual([{ x: 30, y: 40 }])
+    expect(points).toEqual([{ x: 30, y: 40 }])
   })
 
   it('accesses edge start/end', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 r = rect(0, 0, 10, 5)
 draw(r.top.start)
 draw(r.top.end)`)
-    expect(buf.points).toEqual([
+    expect(points).toEqual([
       { x: 10, y: 5 },
       { x: 0, y: 5 },
     ])
@@ -195,35 +183,34 @@ draw(r.top.end)`)
 
 describe('lambdas', () => {
   it('evaluates a lambda', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 f = (x, y) => pt(x + 1, y + 1)
 draw(f(2, 3))`)
-    expect(buf.points).toEqual([{ x: 3, y: 4 }])
+    expect(points).toEqual([{ x: 3, y: 4 }])
   })
 
   it('single-param lambda', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 f = x => pt(x, x)
 draw(f(7))`)
-    expect(buf.points).toEqual([{ x: 7, y: 7 }])
+    expect(points).toEqual([{ x: 7, y: 7 }])
   })
 
   it('lambda sees outer variables (dynamic scoping)', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 offset = 10
 f = x => pt(x + offset, 0)
 draw(f(5))`)
-    expect(buf.points).toEqual([{ x: 15, y: 0 }])
+    expect(points).toEqual([{ x: 15, y: 0 }])
   })
 
   it('lambda assignment does not mutate parent scope', () => {
-    // After calling f, 'a' in the outer scope should still be 1
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 a = 1
 f = x => a = x
 f(99)
 draw(pt(a, 0))`)
-    expect(buf.points).toEqual([{ x: 1, y: 0 }])
+    expect(points).toEqual([{ x: 1, y: 0 }])
   })
 })
 
@@ -233,10 +220,10 @@ draw(pt(a, 0))`)
 
 describe('operation', () => {
   it('defines and calls a named function', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 operation makePoint(x, y) { pt(x, y) }
 draw(makePoint(5, 6))`)
-    expect(buf.points).toEqual([{ x: 5, y: 6 }])
+    expect(points).toEqual([{ x: 5, y: 6 }])
   })
 })
 
@@ -246,46 +233,101 @@ draw(makePoint(5, 6))`)
 
 describe('and / or', () => {
   it('and returns rhs when lhs is truthy', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 draw(pt(1 and 2, 0))`)
-    expect(buf.points).toEqual([{ x: 2, y: 0 }])
+    expect(points).toEqual([{ x: 2, y: 0 }])
   })
 
   it('and returns lhs when lhs is falsy', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 draw(pt(0 and 2, 0))`)
-    expect(buf.points).toEqual([{ x: 0, y: 0 }])
+    expect(points).toEqual([{ x: 0, y: 0 }])
   })
 
   it('or returns lhs when lhs is truthy', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 draw(pt(1 or 2, 0))`)
-    expect(buf.points).toEqual([{ x: 1, y: 0 }])
+    expect(points).toEqual([{ x: 1, y: 0 }])
   })
 
   it('or returns rhs when lhs is falsy', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 draw(pt(0 or 7, 0))`)
-    expect(buf.points).toEqual([{ x: 7, y: 0 }])
+    expect(points).toEqual([{ x: 7, y: 0 }])
   })
 })
 
 // ---------------------------------------------------------------------------
-// draw() variadic
+// draw() variadic & batching
 // ---------------------------------------------------------------------------
 
 describe('draw()', () => {
-  it('accepts multiple arguments', () => {
-    const buf = drawn(`parameters {}
+  it('accepts multiple geometry arguments in one batch', () => {
+    const { points, batches } = drawn(`parameters {}
 draw(pt(1,0), pt(2,0), pt(3,0))`)
-    expect(buf.points).toHaveLength(3)
+    expect(points).toHaveLength(3)
+    expect(batches).toHaveLength(1)
   })
 
-  it('draws mixed types', () => {
-    const buf = drawn(`parameters {}
+  it('draws mixed types in one batch', () => {
+    const { points, edges, batches } = drawn(`parameters {}
 draw(pt(1,1), rect(0,0,5,5))`)
-    expect(buf.points).toHaveLength(1)
-    expect(buf.edges).toHaveLength(4)
+    expect(points).toHaveLength(1)
+    expect(edges).toHaveLength(4)
+    expect(batches).toHaveLength(1)
+  })
+
+  it('multiple draw calls create separate batches', () => {
+    const { batches } = drawn(`parameters {}
+draw(pt(1,0))
+draw(pt(2,0))`)
+    expect(batches).toHaveLength(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
+describe('styles', () => {
+  it('color() sets fill on the batch', () => {
+    const { batches } = drawn(`parameters {}
+draw(rect(0,0,1,1), color(red))`)
+    expect(batches).toHaveLength(1)
+    expect(batches[0].style.fill).toBe('red')
+  })
+
+  it('stroke() sets stroke on the batch', () => {
+    const { batches } = drawn(`parameters {}
+draw(rect(0,0,1,1), stroke(blue))`)
+    expect(batches[0].style.stroke).toBe('blue')
+  })
+
+  it('translucent() sets opacity', () => {
+    const { batches } = drawn(`parameters {}
+draw(rect(0,0,1,1), translucent(0.5))`)
+    expect(batches[0].style.opacity).toBe(0.5)
+  })
+
+  it('dashed sets dashed flag', () => {
+    const { batches } = drawn(`parameters {}
+draw(rect(0,0,1,1), dashed)`)
+    expect(batches[0].style.dashed).toBe(true)
+  })
+
+  it('multiple styles merge', () => {
+    const { batches } = drawn(`parameters {}
+draw(rect(0,0,1,1), color(gray), stroke(black), translucent(0.9), dashed)`)
+    const s = batches[0].style
+    expect(s.fill).toBe('gray')
+    expect(s.stroke).toBe('black')
+    expect(s.opacity).toBe(0.9)
+    expect(s.dashed).toBe(true)
+  })
+
+  it('undefined variables resolve to strings for color names', () => {
+    const result = run('parameters {}\nx = someColor')
+    expect(result.error).toBeNull()
   })
 })
 
@@ -297,15 +339,10 @@ describe('error handling', () => {
   it('returns partial draw buffer when program errors', () => {
     const result = run(`parameters {}
 draw(pt(1,1))
-x = undefined_var`)
+x = pt(nope + 1, 0)`)
     expect(result.error).not.toBeNull()
-    expect(result.drawBuffer.points).toHaveLength(1)
-  })
-
-  it('reports undefined variable', () => {
-    const result = run('parameters {}\nx = nope')
-    expect(result.error).not.toBeNull()
-    expect(result.error!.message).toContain('Undefined variable')
+    const pts = result.drawBuffer.batches.flatMap((b) => b.points)
+    expect(pts).toHaveLength(1)
   })
 })
 
@@ -315,10 +352,10 @@ x = undefined_var`)
 
 describe('shadowing', () => {
   it('reassignment updates the variable', () => {
-    const buf = drawn(`parameters {}
+    const { points } = drawn(`parameters {}
 x = 1
 x = 2
 draw(pt(x, 0))`)
-    expect(buf.points).toEqual([{ x: 2, y: 0 }])
+    expect(points).toEqual([{ x: 2, y: 0 }])
   })
 })

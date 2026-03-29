@@ -27,6 +27,19 @@ export interface NullVal {
   type: 'null'
 }
 
+export interface StringVal {
+  type: 'string'
+  value: string
+}
+
+export interface StyleVal {
+  type: 'style'
+  fill?: string
+  stroke?: string
+  opacity?: number
+  dashed?: boolean
+}
+
 export interface Point2Val {
   type: 'point2'
   x: number
@@ -77,6 +90,8 @@ export interface BuiltinFnVal {
 export type Value =
   | NumberVal
   | NullVal
+  | StringVal
+  | StyleVal
   | Point2Val
   | Edge2Val
   | RectangleVal
@@ -134,10 +149,18 @@ export function asNumber(v: Value, context: string): number {
   return v.value
 }
 
+export function asString(v: Value): string {
+  if (v.type === 'string') return v.value
+  if (v.type === 'number') return String(v.value)
+  throw new Error(`Expected string, got ${v.type}`)
+}
+
 export function showValue(v: Value): string {
   switch (v.type) {
     case 'number': return String(v.value)
     case 'null': return 'null'
+    case 'string': return v.value
+    case 'style': return `<style>`
     case 'point2': return `pt(${v.x}, ${v.y})`
     case 'edge2': return `edge(${v.start.x},${v.start.y} -> ${v.end.x},${v.end.y})`
     case 'rectangle': return `rect(${v.x}, ${v.y}, ${v.width}, ${v.height})`

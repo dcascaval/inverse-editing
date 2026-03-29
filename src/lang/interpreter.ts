@@ -1,8 +1,9 @@
-import type { Expression, Program } from '@/lang/ast'
+import { type Expression, type Program, show } from '@/lang/ast'
 import {
   type Value,
   type Point2,
   type Edge2,
+  type StyleVal,
   createNumber,
   NULL,
   createPooint,
@@ -10,16 +11,39 @@ import {
   createEdge,
   isTruthy,
   asNumber,
+  asString,
   showValue,
 } from '@/lang/values'
+import { overloaded, sig, Num, Str, Pt2 } from '@/lang/overload'
 
 // ---------------------------------------------------------------------------
-// Draw buffer
+// Draw style
 // ---------------------------------------------------------------------------
 
-export interface DrawBuffer {
+export interface DrawStyle {
+  fill?: string
+  stroke?: string
+  opacity?: number
+  dashed?: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Draw buffer — batched per draw() call
+// ---------------------------------------------------------------------------
+
+export interface Polygon2 {
+  vertices: Point2[]
+}
+
+export interface DrawBatch {
   points: Point2[]
   edges: Edge2[]
+  polygons: Polygon2[]
+  style: DrawStyle
+}
+
+export interface DrawBuffer {
+  batches: DrawBatch[]
 }
 
 function pt2(p: { x: number; y: number }): Point2 {
@@ -30,16 +54,17 @@ function edge2(e: { start: { x: number; y: number }; end: { x: number; y: number
   return { start: pt2(e.start), end: pt2(e.end) }
 }
 
-function collectDrawable(v: Value, buf: DrawBuffer) {
+function collectDrawable(v: Value, batch: DrawBatch) {
   switch (v.type) {
     case 'point2':
-      buf.points.push(pt2(v))
+      batch.points.push(pt2(v))
       break
     case 'edge2':
-      buf.edges.push(edge2(v))
+      batch.edges.push(edge2(v))
       break
     case 'rectangle':
-      for (const e of v.edges) buf.edges.push(edge2(e))
+      for (const e of v.edges) batch.edges.push(edge2(e))
+      batch.polygons.push({ vertices: v.points.map(pt2) })
       break
   }
 }
@@ -128,7 +153,8 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer): Value {
 
     case 'Variable': {
       const v = ctx.lookup(expr.name)
-      if (v === undefined) throw new Error(`Undefined variable: ${expr.name}`)
+      // Undefined variables resolve to their name as a string
+      if (v === undefined) return { type: 'string', value: expr.name }
       return v
     }
 
@@ -189,7 +215,7 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer): Value {
         }
       }
 
-      throw new Error(`Cannot call ${callee.type}`)
+      throw new Error(`Cannot call ${callee.type} ${showValue(callee)}`)
     }
 
     case 'Lambda':
@@ -226,52 +252,66 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer): Value {
 function makeBuiltins(buf: DrawBuffer): Scope {
   const scope: Scope = new Map()
 
-  function def(name: string, fn: (args: Value[]) => Value) {
-    scope.set(name, { type: 'builtin', name, fn })
-  }
+  scope.set('pt', overloaded('pt', [
+    sig([Num, Num], (x, y) => createPooint(x.value, y.value)),
+  ]))
 
-  def('pt', (args) => {
-    const x = asNumber(args[0], 'pt arg 0')
-    const y = asNumber(args[1], 'pt arg 1')
-    return createPooint(x, y)
-  })
+  scope.set('rect', overloaded('rect', [
+    sig([Num, Num, Num, Num], (x, y, w, h) =>
+      createRectangle(x.value, y.value, w.value, h.value)),
+    sig([Pt2, Pt2], (p1, p2) =>
+      createRectangle(
+        Math.min(p1.x, p2.x),
+        Math.min(p1.y, p2.y),
+        Math.abs(p2.x - p1.x),
+        Math.abs(p2.y - p1.y),
+      )),
+  ]))
 
-  def('rect', (args) => {
-    if (args.length >= 4) {
-      const x = asNumber(args[0], 'rect arg 0')
-      const y = asNumber(args[1], 'rect arg 1')
-      const w = asNumber(args[2], 'rect arg 2')
-      const h = asNumber(args[3], 'rect arg 3')
-      return createRectangle(x, y, w, h)
-    }
-    if (args.length === 2 && args[0].type === 'point2' && args[1].type === 'point2') {
-      const p1 = args[0]
-      const p2 = args[1]
-      const x = Math.min(p1.x, p2.x)
-      const y = Math.min(p1.y, p2.y)
-      const w = Math.abs(p2.x - p1.x)
-      const h = Math.abs(p2.y - p1.y)
-      return createRectangle(x, y, w, h)
-    }
-    throw new Error('rect() expects (x,y,w,h) or (point, point)')
-  })
+  scope.set('edge', overloaded('edge', [
+    sig([Pt2, Pt2], (p1, p2) => createEdge(p1, p2)),
+    sig([Num, Num, Num, Num], (x1, y1, x2, y2) =>
+      createEdge({ x: x1.value, y: y1.value }, { x: x2.value, y: y2.value })),
+  ]))
 
-  def('edge', (args) => {
-    if (args.length === 2 && args[0].type === 'point2' && args[1].type === 'point2') {
-      return createEdge(args[0], args[1])
-    }
-    if (args.length === 4) {
-      return createEdge(
-        { x: asNumber(args[0], 'edge x1'), y: asNumber(args[1], 'edge y1') },
-        { x: asNumber(args[2], 'edge x2'), y: asNumber(args[3], 'edge y2') },
-      )
-    }
-    throw new Error('edge() expects (point, point) or (x1,y1,x2,y2)')
-  })
+  // Style builtins
+  scope.set('color', overloaded('color', [
+    sig([Str], (s): StyleVal => ({ type: 'style', fill: s.value })),
+  ]))
 
-  def('draw', (args) => {
-    for (const a of args) collectDrawable(a, buf)
-    return NULL
+  scope.set('stroke', overloaded('stroke', [
+    sig([Str], (s): StyleVal => ({ type: 'style', stroke: s.value })),
+  ]))
+
+  scope.set('translucent', overloaded('translucent', [
+    sig([Num], (n): StyleVal => ({ type: 'style', opacity: n.value })),
+  ]))
+
+  // dashed is a style constant, not a function
+  scope.set('dashed', { type: 'style', dashed: true } satisfies StyleVal)
+
+  // draw is variadic: draw(geom..., style...)
+  scope.set('draw', {
+    type: 'builtin',
+    name: 'draw',
+    fn: (args: Value[]) => {
+      const batch: DrawBatch = { points: [], edges: [], polygons: [], style: {} }
+      for (const a of args) {
+        if (a.type === 'style') {
+          // Merge style properties
+          if (a.fill !== undefined) batch.style.fill = a.fill
+          if (a.stroke !== undefined) batch.style.stroke = a.stroke
+          if (a.opacity !== undefined) batch.style.opacity = a.opacity
+          if (a.dashed !== undefined) batch.style.dashed = a.dashed
+        } else {
+          collectDrawable(a, batch)
+        }
+      }
+      if (batch.points.length > 0 || batch.edges.length > 0) {
+        buf.batches.push(batch)
+      }
+      return NULL
+    },
   })
 
   return scope
@@ -290,7 +330,7 @@ export function executeProgram(
   program: Program,
   parameterValues?: Map<string, number>,
 ): ExecutionResult {
-  const buf: DrawBuffer = { points: [], edges: [] }
+  const buf: DrawBuffer = { batches: [] }
   const builtins = makeBuiltins(buf)
   const ctx = new Context(builtins)
 
@@ -307,7 +347,8 @@ export function executeProgram(
     try {
       evaluate(stmt, ctx, buf)
     } catch (e) {
-      error = e instanceof Error ? e : new Error(String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      error = new Error(`${msg}\n  in: ${show(stmt)}`)
       break
     }
   }

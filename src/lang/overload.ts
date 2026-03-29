@@ -1,6 +1,8 @@
 import type {
   Value,
   NumberVal,
+  StringVal,
+  StyleVal,
   Point2Val,
   Edge2Val,
   RectangleVal,
@@ -22,6 +24,8 @@ function tag<V extends Value>(label: string, type: V['type']): TypeTag<V> {
 }
 
 export const Num: TypeTag<NumberVal> = tag('number', 'number')
+export const Str: TypeTag<StringVal> = tag('string', 'string')
+export const Sty: TypeTag<StyleVal> = tag('style', 'style')
 export const Pt2: TypeTag<Point2Val> = tag('point2', 'point2')
 export const Edg: TypeTag<Edge2Val> = tag('edge2', 'edge2')
 export const Rct: TypeTag<RectangleVal> = tag('rectangle', 'rectangle')
