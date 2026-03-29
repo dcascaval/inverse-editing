@@ -11,11 +11,11 @@ import {
 } from '@/lang/values'
 import type { LineageGraph } from '@/lang/lineage'
 
-// ---------------------------------------------------------------------------
+
 // We use three's Matrix3 for 2D affine transforms.
 // Column-major elements layout:
 //   [a, b, 0, c, d, 0, tx, ty, 1]
-// ---------------------------------------------------------------------------
+
 
 export type { Matrix3 }
 
@@ -32,9 +32,9 @@ function applyToPoint(m: Matrix3, p: Point2): Point2 {
   return { x: _v.x, y: _v.y }
 }
 
-// ---------------------------------------------------------------------------
+
 // Matrix constructors
-// ---------------------------------------------------------------------------
+
 
 export function translationMatrix(tx: number, ty: number): Matrix3 {
   return mat(1, 0, 0, 1, tx, ty)
@@ -84,9 +84,9 @@ export function mirrorMatrix(p1: Point2, p2: Point2): Matrix3 {
   return aroundCenter(p1, mat(cos2, sin2, sin2, -cos2, 0, 0))
 }
 
-// ---------------------------------------------------------------------------
+
 // Transform geometric values (non-mutating, with optional lineage tracking)
-// ---------------------------------------------------------------------------
+
 
 function transformPt(m: Matrix3, p: Point2Val, g: LineageGraph): Point2Val {
   const tp = applyToPoint(m, p)

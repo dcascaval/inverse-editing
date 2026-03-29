@@ -1,34 +1,31 @@
 import type { Expression } from '@/lang/ast'
 import type { LineageGraph } from '@/lang/lineage'
+import { type Query, showQuery } from '@/lang/query'
 
-// ---------------------------------------------------------------------------
+
 // Geometric primitives (plain data, used by store + renderer)
-// ---------------------------------------------------------------------------
-
-export interface Point2 {
+export type Point2 = {
   x: number
   y: number
 }
 
-export interface Edge2 {
+export type Edge2 = {
   start: Point2
   end: Point2
 }
 
-// ---------------------------------------------------------------------------
-// Runtime values
-// ---------------------------------------------------------------------------
 
-export interface NumberVal {
+// Runtime values
+export type NumberVal = {
   type: 'number'
   value: number
 }
 
-export interface NullVal {
+export type NullVal = {
   type: 'null'
 }
 
-export interface StyleVal {
+export type StyleVal = {
   type: 'style'
   fill?: string
   stroke?: string
@@ -36,19 +33,19 @@ export interface StyleVal {
   dashed?: boolean
 }
 
-export interface Point2Val {
+export type Point2Val = {
   type: 'point2'
   x: number
   y: number
 }
 
-export interface Edge2Val {
+export type Edge2Val = {
   type: 'edge2'
   start: Point2Val
   end: Point2Val
 }
 
-export interface RectangleVal {
+export type RectangleVal = {
   type: 'rectangle'
   x: number
   y: number
@@ -66,26 +63,26 @@ export interface RectangleVal {
   edges: Edge2Val[]
 }
 
-export interface ArrayVal {
+export type ArrayVal = {
   type: 'array'
   elements: Value[]
 }
 
-export interface LambdaVal {
+export type LambdaVal = {
   type: 'lambda'
   params: string[]
   body: Expression
 }
 
-export interface BuiltinFnVal {
+export type BuiltinFnVal = {
   type: 'builtin'
   name: string
   fn: (args: Value[]) => Value
 }
 
-export interface QueryVal {
+export type QueryVal = {
   type: 'query'
-  test: (candidate: Value) => boolean
+  query: Query
 }
 
 type RawValue =
@@ -102,13 +99,11 @@ type RawValue =
 
 export type Value = RawValue & { sourceText?: string }
 
-// ---------------------------------------------------------------------------
-// Constructors
-// ---------------------------------------------------------------------------
 
+// Constructors
 export const createNumber = (value: number): NumberVal => ({ type: 'number', value })
 
-export const NULL: NullVal = { type: 'null' }
+export const createNull = (): NullVal => ({ type: 'null' })
 
 export const createPoint = (x: number, y: number): Point2Val => ({ type: 'point2', x, y })
 
@@ -148,16 +143,8 @@ export function constructRectangle(x: number, y: number, w: number, h: number, g
   return createRectangle(bl, br, tl, tr, g)
 }
 
-// ---------------------------------------------------------------------------
+
 // Helpers
-// ---------------------------------------------------------------------------
-
-export function isTruthy(v: Value): boolean {
-  if (v.type === 'null') return false
-  if (v.type === 'number') return v.value !== 0
-  return true
-}
-
 export function asNumber(v: Value, context: string): number {
   if (v.type !== 'number') throw new Error(`Expected number in ${context}, got ${v.type}`)
   return v.value
@@ -180,6 +167,6 @@ export function showValue(v: Value): string {
     case 'array': return `[${v.elements.map(showValue).join(', ')}]`
     case 'lambda': return `<lambda(${v.params.join(', ')})>`
     case 'builtin': return `<builtin:${v.name}>`
-    case 'query': return `<query>`
+    case 'query': return showQuery(v.query)
   }
 }

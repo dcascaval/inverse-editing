@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { run, drawnPointCount, drawnEdgeCount } from './lib'
 
-// ---------------------------------------------------------------------------
+
 // from / fromAny (direct edges only)
-// ---------------------------------------------------------------------------
+
 
 describe('from (direct edges only)', () => {
   it('from() point→point: single corner returns 1 point', () => {
@@ -80,9 +80,9 @@ draw(query(r1.points, from(r0.bottomLeft)))`)
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // derivedFrom / derivedFromAny (direct + indirect edges)
-// ---------------------------------------------------------------------------
+
 
 describe('derivedFrom (direct + indirect edges)', () => {
   it('derivedFrom() corner finds edges that depend on it', () => {
@@ -127,9 +127,9 @@ draw(query(c.edges, derivedFrom(a.bottomLeft)))`)
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Query operators (not, and, or)
-// ---------------------------------------------------------------------------
+
 
 describe('query operators', () => {
   it('not() negates a query', () => {
@@ -163,5 +163,36 @@ b = a.translate(20, 0)
 draw(query(b.edges, derivedFrom(a.bottomLeft)))`)
     expect(drawBuffer.batches).toHaveLength(1)
     expect(drawBuffer.batches[0].edges).toHaveLength(2)
+  })
+
+  it('contains() expands candidate by containment', () => {
+    // Without contains: querying edges for from(a.bottomLeft) only finds edges
+    // that are themselves directly reachable from a.bottomLeft — none are.
+    // With contains: each candidate edge is expanded to include its endpoints,
+    // so b.bottom matches because b.bottomLeft (contained in b.bottom) is
+    // reachable from a.bottomLeft.
+    const without = drawnEdgeCount(`parameters {}
+a = rect(0, 0, 10, 10)
+b = a.translate(20, 0)
+draw(query(b.edges, from(a.bottomLeft)))`)
+    expect(without).toBe(0)
+
+    const with_ = drawnEdgeCount(`parameters {}
+a = rect(0, 0, 10, 10)
+b = a.translate(20, 0)
+draw(query(b.edges, contains(from(a.bottomLeft))))`)
+    expect(with_).toBe(2)
+  })
+
+  it('contains() with rect candidates', () => {
+    // A rect in an array: contains() expands it to all its points and edges.
+    // from(a.bottomLeft) should match because b contains b.bottomLeft which
+    // is reachable from a.bottomLeft.
+    const count = drawnPointCount(`parameters {}
+a = rect(0, 0, 10, 10)
+b = a.translate(20, 0)
+draw(query(b.points, contains(from(a.top))))`)
+    // contains() on points is the same as without — points contain only themselves
+    expect(count).toBe(2)
   })
 })

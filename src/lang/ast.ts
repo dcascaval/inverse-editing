@@ -1,67 +1,67 @@
-export interface ParamBounds {
+export type ParamBounds = {
   min: number
   mid: number
   max: number
 }
 
-export interface ParameterStmt {
+export type ParameterStmt = {
   type: 'ParameterStmt'
   parameters: Array<{ name: string; bounds: ParamBounds }>
 }
 
-export interface Variable {
+export type Variable = {
   type: 'Variable'
   name: string
 }
 
-export interface Literal {
+export type Literal = {
   type: 'Literal'
   value: number
 }
 
-export interface BinOp {
+export type BinOp = {
   type: 'BinOp'
   op: string
   lhs: Expression
   rhs: Expression
 }
 
-export interface UnaryOp {
+export type UnaryOp = {
   type: 'UnaryOp'
   op: string
   argument: Expression
 }
 
-export interface Assignment {
+export type Assignment = {
   type: 'Assignment'
   target: string
   expression: Expression
 }
 
-export interface Apply {
+export type Apply = {
   type: 'Apply'
   callee: Expression
   args: Expression[]
 }
 
-export interface PropertyAccess {
+export type PropertyAccess = {
   type: 'PropertyAccess'
   object: Expression
   property: string
 }
 
-export interface Lambda {
+export type Lambda = {
   type: 'Lambda'
   params: string[]
   body: Expression
 }
 
-export interface Block {
+export type Block = {
   type: 'Block'
   statements: Expression[]
 }
 
-export interface FnDefn {
+export type FnDefn = {
   type: 'FnDefn'
   name: string
   params: string[]
@@ -82,7 +82,7 @@ export type Expression =
 
 export type AST = ParameterStmt | Expression
 
-export interface Program {
+export type Program = {
   parameters: ParameterStmt;
   statements: Expression[]
 }
@@ -100,7 +100,9 @@ export function show(node: AST): string {
     case 'BinOp':
       return `(${show(node.lhs)} ${node.op} ${show(node.rhs)})`
     case 'UnaryOp':
-      return `(${node.op}${show(node.argument)})`
+      return node.op === 'not'
+        ? `(not ${show(node.argument)})`
+        : `(${node.op}${show(node.argument)})`
     case 'Assignment':
       return `${node.target} = ${show(node.expression)}`
     case 'Apply':

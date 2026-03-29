@@ -7,9 +7,9 @@ function s(input: string): string {
   return show(parseExpression(input))
 }
 
-// ---------------------------------------------------------------------------
+
 // Literals & variables
-// ---------------------------------------------------------------------------
+
 
 describe('literals and variables', () => {
   it('parses integer literal', () => {
@@ -29,9 +29,9 @@ describe('literals and variables', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Arithmetic
-// ---------------------------------------------------------------------------
+
 
 describe('arithmetic', () => {
   it('parses addition', () => {
@@ -79,9 +79,9 @@ describe('arithmetic', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Unary operators
-// ---------------------------------------------------------------------------
+
 
 describe('unary operators', () => {
   it('parses unary minus', () => {
@@ -101,11 +101,11 @@ describe('unary operators', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// and / or operators
-// ---------------------------------------------------------------------------
 
-describe('and / or', () => {
+// and / or operators
+
+
+describe('and / or / not', () => {
   it('parses and', () => {
     expect(s('a and b')).toBe('(a and b)')
   })
@@ -121,11 +121,27 @@ describe('and / or', () => {
   it('chains and', () => {
     expect(s('a and b and c')).toBe('((a and b) and c)')
   })
+
+  it('not as unary operator', () => {
+    expect(s('not a')).toBe('(not a)')
+  })
+
+  it('not binds tighter than and', () => {
+    expect(s('a and not b')).toBe('(a and (not b))')
+  })
+
+  it('not binds tighter than or', () => {
+    expect(s('a or not b')).toBe('(a or (not b))')
+  })
+
+  it('chained not', () => {
+    expect(s('not not a')).toBe('(not (not a))')
+  })
 })
 
-// ---------------------------------------------------------------------------
+
 // Property access & function application
-// ---------------------------------------------------------------------------
+
 
 describe('property access and apply', () => {
   it('parses property access', () => {
@@ -165,9 +181,9 @@ describe('property access and apply', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Lambda
-// ---------------------------------------------------------------------------
+
 
 describe('lambda', () => {
   it('parses single-param lambda (no parens)', () => {
@@ -187,9 +203,9 @@ describe('lambda', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Block
-// ---------------------------------------------------------------------------
+
 
 describe('block', () => {
   it('parses empty block', () => {
@@ -209,9 +225,9 @@ describe('block', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // FnDefn
-// ---------------------------------------------------------------------------
+
 
 describe('fnDefn', () => {
   it('parses operation definition', () => {
@@ -225,9 +241,9 @@ describe('fnDefn', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Assignment
-// ---------------------------------------------------------------------------
+
 
 describe('assignment', () => {
   it('parses simple assignment', () => {
@@ -251,9 +267,9 @@ describe('assignment', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Parameter block
-// ---------------------------------------------------------------------------
+
 
 describe('parameter block', () => {
   it('parses empty parameter block', () => {
@@ -293,9 +309,9 @@ describe('parameter block', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Full programs
-// ---------------------------------------------------------------------------
+
 
 describe('full programs', () => {
   it('parses parameter block followed by statements', () => {

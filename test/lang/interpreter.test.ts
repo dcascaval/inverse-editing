@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import type { Point2 } from '@/lang/values'
 import { run, runOk, drawn } from './lib'
 
-// ---------------------------------------------------------------------------
+
 // Basic arithmetic & variables
-// ---------------------------------------------------------------------------
+
 
 describe('arithmetic', () => {
   it('draws nothing from pure arithmetic', () => {
@@ -30,9 +30,9 @@ describe('arithmetic', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Parameters
-// ---------------------------------------------------------------------------
+
 
 describe('parameters', () => {
   it('injects parameter mid values into context', () => {
@@ -62,9 +62,9 @@ draw(pt(x, 0))`)
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // pt() builtin
-// ---------------------------------------------------------------------------
+
 
 describe('pt()', () => {
   it('creates a point and draws it', () => {
@@ -78,9 +78,9 @@ describe('pt()', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // rect() builtin
-// ---------------------------------------------------------------------------
+
 
 describe('rect()', () => {
   it('creates rectangle from x,y,w,h and draws edges', () => {
@@ -103,9 +103,9 @@ describe('rect()', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Property access
-// ---------------------------------------------------------------------------
+
 
 describe('property access', () => {
   it('accesses point x and y', () => {
@@ -153,9 +153,9 @@ draw(r.top.end)`)
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Lambda / function calls
-// ---------------------------------------------------------------------------
+
 
 describe('lambdas', () => {
   it('evaluates a lambda', () => {
@@ -190,9 +190,9 @@ draw(pt(a, 0))`)
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // operation (FnDefn)
-// ---------------------------------------------------------------------------
+
 
 describe('operation', () => {
   it('defines and calls a named function', () => {
@@ -203,39 +203,25 @@ draw(makePoint(5, 6))`)
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // and / or operators
-// ---------------------------------------------------------------------------
+
 
 describe('and / or', () => {
-  it('and returns rhs when lhs is truthy', () => {
-    const { points } = drawn(`parameters {}
-draw(pt(1 and 2, 0))`)
-    expect(points).toEqual([{ x: 2, y: 0 }])
+  it('and errors on non-query operands', () => {
+    const result = run('parameters {}\n1 and 2')
+    expect(result.error).not.toBeNull()
   })
 
-  it('and returns lhs when lhs is falsy', () => {
-    const { points } = drawn(`parameters {}
-draw(pt(0 and 2, 0))`)
-    expect(points).toEqual([{ x: 0, y: 0 }])
-  })
-
-  it('or returns lhs when lhs is truthy', () => {
-    const { points } = drawn(`parameters {}
-draw(pt(1 or 2, 0))`)
-    expect(points).toEqual([{ x: 1, y: 0 }])
-  })
-
-  it('or returns rhs when lhs is falsy', () => {
-    const { points } = drawn(`parameters {}
-draw(pt(0 or 7, 0))`)
-    expect(points).toEqual([{ x: 7, y: 0 }])
+  it('or errors on non-query operands', () => {
+    const result = run('parameters {}\n1 or 2')
+    expect(result.error).not.toBeNull()
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // draw() variadic & batching
-// ---------------------------------------------------------------------------
+
 
 describe('draw()', () => {
   it('accepts multiple geometry arguments in one batch', () => {
@@ -261,9 +247,9 @@ draw(pt(2,0))`)
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Styles
-// ---------------------------------------------------------------------------
+
 
 describe('styles', () => {
   it('color() sets fill on the batch', () => {
@@ -307,9 +293,9 @@ draw(rect(0,0,1,1), color(gray), stroke(black), translucent(0.9), dashed)`)
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Error handling: partial draw on error
-// ---------------------------------------------------------------------------
+
 
 describe('error handling', () => {
   it('returns partial draw buffer when program errors', () => {
@@ -322,9 +308,9 @@ x = pt(nope + 1, 0)`)
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Variable shadowing / reassignment
-// ---------------------------------------------------------------------------
+
 
 describe('shadowing', () => {
   it('reassignment updates the variable', () => {
@@ -336,9 +322,9 @@ draw(pt(x, 0))`)
   })
 })
 
-// ---------------------------------------------------------------------------
+
 // Transforms
-// ---------------------------------------------------------------------------
+
 
 function approxPt(p: Point2, x: number, y: number) {
   expect(p.x).toBeCloseTo(x, 10)

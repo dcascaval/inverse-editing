@@ -9,11 +9,11 @@ import type {
   BuiltinFnVal,
 } from '@/lang/values'
 
-// ---------------------------------------------------------------------------
-// Type tags — phantom-typed so `sig` callbacks infer correct arg types
-// ---------------------------------------------------------------------------
 
-export interface TypeTag<V extends Value = Value> {
+// Type tags — phantom-typed so `sig` callbacks infer correct arg types
+
+
+export type TypeTag<V extends Value = Value> = {
   readonly label: string
   match(v: Value): v is V
 }
@@ -30,15 +30,15 @@ export const Rct: TypeTag<RectangleVal> = tag('rectangle', 'rectangle')
 export const Arr: TypeTag<ArrayVal> = tag('array', 'array')
 export const Any: TypeTag<Value> = { label: 'any', match: (_v): _v is Value => true }
 
-// ---------------------------------------------------------------------------
+
 // Overload signatures
-// ---------------------------------------------------------------------------
+
 
 type Infer<T extends readonly TypeTag[]> = {
   [K in keyof T]: T[K] extends TypeTag<infer V> ? V : never
 }
 
-interface Overload {
+type Overload = {
   readonly tags: readonly TypeTag[]
   readonly fn: (...args: never[]) => Value
 }
@@ -50,9 +50,9 @@ export function sig<const T extends readonly TypeTag[]>(
   return { tags, fn: fn as Overload['fn'] }
 }
 
-// ---------------------------------------------------------------------------
+
 // Build an overloaded builtin
-// ---------------------------------------------------------------------------
+
 
 export function overloaded(name: string, overloads: Overload[]): BuiltinFnVal {
   return {

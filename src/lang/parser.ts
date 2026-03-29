@@ -23,9 +23,9 @@ import type {
   ParamBounds,
 } from '@/lang/ast'
 
-// ---------------------------------------------------------------------------
+
 // Helpers
-// ---------------------------------------------------------------------------
+
 
 /** Skip zero or more newlines */
 const _ = rep_sc(tok(Token.Newline))
@@ -33,16 +33,16 @@ const _ = rep_sc(tok(Token.Newline))
 /** One or more newlines or semicolons (statement separator) */
 const sep = rep_sc(alt_sc(tok(Token.Newline), tok(Token.Semicolon)))
 
-// ---------------------------------------------------------------------------
+
 // Forward-declared rules
-// ---------------------------------------------------------------------------
+
 
 const expr = rule<Token, Expression>()
 const stmt = rule<Token, Expression>()
 
-// ---------------------------------------------------------------------------
+
 // Primary expressions
-// ---------------------------------------------------------------------------
+
 
 const numberLit = apply(
   tok(Token.Number),
@@ -151,9 +151,9 @@ const primary = alt_sc(
   parenExpr,
 )
 
-// ---------------------------------------------------------------------------
+
 // Postfix: property access and function application
-// ---------------------------------------------------------------------------
+
 
 type PostfixSuffix =
   | { kind: 'prop'; name: string }
@@ -174,9 +174,9 @@ const postfix = lrec_sc(primary, postfixSuffix, (lhs, suffix): Expression => {
   return { type: 'Apply', callee: lhs, args: suffix.args }
 })
 
-// ---------------------------------------------------------------------------
+
 // Unary: -x, +x
-// ---------------------------------------------------------------------------
+
 
 const unary: typeof expr = rule<Token, Expression>()
 unary.setPattern(
@@ -193,9 +193,9 @@ unary.setPattern(
   ),
 )
 
-// ---------------------------------------------------------------------------
+
 // Binary operators (ascending precedence via nested lrec_sc)
-// ---------------------------------------------------------------------------
+
 
 function binop(
   operand: typeof expr,
@@ -238,12 +238,28 @@ function binopByText(
   return r
 }
 
-const andExpr = binopByText(additive, 'and')
+// `not` as a unary prefix operator, binding tighter than and/or
+const notExpr: typeof expr = rule<Token, Expression>()
+notExpr.setPattern(
+  alt_sc(
+    apply(
+      seq(str('not'), notExpr),
+      ([, arg]): Expression => ({
+        type: 'UnaryOp',
+        op: 'not',
+        argument: arg,
+      }),
+    ),
+    additive,
+  ),
+)
+
+const andExpr = binopByText(notExpr, 'and')
 const orExpr = binopByText(andExpr, 'or')
 
-// ---------------------------------------------------------------------------
+
 // Expression & Statement
-// ---------------------------------------------------------------------------
+
 
 expr.setPattern(orExpr)
 
@@ -263,9 +279,9 @@ stmt.setPattern(
   ),
 )
 
-// ---------------------------------------------------------------------------
+
 // Parameter block
-// ---------------------------------------------------------------------------
+
 
 const paramBounds = alt_sc(
   // min < mid < max
@@ -302,9 +318,9 @@ const parameterBlock = apply(
   (parameters): ParameterStmt => ({ type: 'ParameterStmt', parameters }),
 )
 
-// ---------------------------------------------------------------------------
+
 // Program
-// ---------------------------------------------------------------------------
+
 
 const program = apply(
   seq(
@@ -319,9 +335,9 @@ const program = apply(
   }),
 )
 
-// ---------------------------------------------------------------------------
+
 // Public API
-// ---------------------------------------------------------------------------
+
 
 export function parse(input: string): Program {
   return expectSingleResult(expectEOF(program.parse(lexer.parse(input))))

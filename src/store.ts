@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { DrawBatch } from '@/lang/interpreter'
 
-export interface Slider {
+export type Slider = {
   name: string
   min: number
   max: number
@@ -10,12 +10,12 @@ export interface Slider {
   value: number
 }
 
-export interface Program {
+export type Program = {
   name: string
   code: string
 }
 
-interface Store {
+type Store = {
   // Program management
   programs: Program[]
   activeIndex: number
