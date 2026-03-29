@@ -27,11 +27,6 @@ export interface NullVal {
   type: 'null'
 }
 
-export interface StringVal {
-  type: 'string'
-  value: string
-}
-
 export interface StyleVal {
   type: 'style'
   fill?: string
@@ -87,10 +82,9 @@ export interface BuiltinFnVal {
   fn: (args: Value[]) => Value
 }
 
-export type Value =
+type RawValue =
   | NumberVal
   | NullVal
-  | StringVal
   | StyleVal
   | Point2Val
   | Edge2Val
@@ -98,6 +92,8 @@ export type Value =
   | ArrayVal
   | LambdaVal
   | BuiltinFnVal
+
+export type Value = RawValue & { sourceText?: string }
 
 // ---------------------------------------------------------------------------
 // Constructors
@@ -149,17 +145,16 @@ export function asNumber(v: Value, context: string): number {
   return v.value
 }
 
-export function asString(v: Value): string {
-  if (v.type === 'string') return v.value
+export function asString(v: Value, context: string): string {
+  if (v.type === 'null' && v.sourceText !== undefined) return v.sourceText
   if (v.type === 'number') return String(v.value)
-  throw new Error(`Expected string, got ${v.type}`)
+  throw new Error(`Expected string in ${context}, got ${v.type}`)
 }
 
 export function showValue(v: Value): string {
   switch (v.type) {
     case 'number': return String(v.value)
-    case 'null': return 'null'
-    case 'string': return v.value
+    case 'null': return v.sourceText ?? 'null'
     case 'style': return `<style>`
     case 'point2': return `pt(${v.x}, ${v.y})`
     case 'edge2': return `edge(${v.start.x},${v.start.y} -> ${v.end.x},${v.end.y})`

@@ -359,3 +359,118 @@ draw(pt(x, 0))`)
     expect(points).toEqual([{ x: 2, y: 0 }])
   })
 })
+
+// ---------------------------------------------------------------------------
+// Transforms
+// ---------------------------------------------------------------------------
+
+function approxPt(p: Point2, x: number, y: number) {
+  expect(p.x).toBeCloseTo(x, 10)
+  expect(p.y).toBeCloseTo(y, 10)
+}
+
+describe('transforms', () => {
+  it('translateX shifts x', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(1, 2).translateX(10))`)
+    approxPt(points[0], 11, 2)
+  })
+
+  it('translateY shifts y', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(1, 2).translateY(5))`)
+    approxPt(points[0], 1, 7)
+  })
+
+  it('translate shifts both axes', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(0, 0).translate(3, 4))`)
+    approxPt(points[0], 3, 4)
+  })
+
+  it('scale from origin', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(2, 3).scale(2))`)
+    approxPt(points[0], 4, 6)
+  })
+
+  it('scale around center', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(4, 0).scale(pt(2, 0), 3))`)
+    approxPt(points[0], 8, 0)
+  })
+
+  it('rotateX compresses y', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(1, 1).rotateX(90))`)
+    approxPt(points[0], 1, 0)
+  })
+
+  it('rotateY compresses x', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(1, 1).rotateY(90))`)
+    approxPt(points[0], 0, 1)
+  })
+
+  it('rotateX around center', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(0, 3).rotateX(pt(0, 1), 90))`)
+    approxPt(points[0], 0, 1)
+  })
+
+  it('rotateY around center', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(3, 0).rotateY(pt(1, 0), 90))`)
+    approxPt(points[0], 1, 0)
+  })
+
+  it('mirror about x-axis (via two points)', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(1, 2).mirror(pt(0, 0), pt(1, 0)))`)
+    approxPt(points[0], 1, -2)
+  })
+
+  it('mirror about edge', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(1, 2).mirror(edge(0, 0, 1, 0)))`)
+    approxPt(points[0], 1, -2)
+  })
+
+  it('mirror about y-axis', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(3, 1).mirror(pt(0, 0), pt(0, 1)))`)
+    approxPt(points[0], -3, 1)
+  })
+
+  it('transforms edge point-wise', () => {
+    const { edges } = drawn(`parameters {}
+draw(edge(1, 0, 3, 0).translate(0, 5))`)
+    approxPt(edges[0].start, 1, 5)
+    approxPt(edges[0].end, 3, 5)
+  })
+
+  it('transforms rectangle point-wise', () => {
+    const { edges } = drawn(`parameters {}
+draw(rect(0, 0, 2, 2).translate(10, 10))`)
+    expect(edges).toHaveLength(4)
+    // bottom edge: (10,10)→(12,10)
+    approxPt(edges[0].start, 10, 10)
+    approxPt(edges[0].end, 12, 10)
+  })
+
+  it('chained transforms', () => {
+    const { points } = drawn(`parameters {}
+draw(pt(0, 0).translate(1, 0).translate(0, 1))`)
+    approxPt(points[0], 1, 1)
+  })
+
+  it('does not mutate original', () => {
+    const { points } = drawn(`parameters {}
+p = pt(1, 1)
+q = p.translate(10, 0)
+draw(p)
+draw(q)`)
+    approxPt(points[0], 1, 1)
+    approxPt(points[1], 11, 1)
+  })
+})

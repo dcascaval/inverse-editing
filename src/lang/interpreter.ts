@@ -14,7 +14,18 @@ import {
   asString,
   showValue,
 } from '@/lang/values'
-import { overloaded, sig, Num, Str, Pt2 } from '@/lang/overload'
+import { overloaded, sig, Num, Pt2 } from '@/lang/overload'
+import {
+  transformValue,
+  translationMatrix,
+  rotateXMatrix,
+  rotateYMatrix,
+  rotateXAroundMatrix,
+  rotateYAroundMatrix,
+  scaleMatrix,
+  scaleAroundMatrix,
+  mirrorMatrix,
+} from '@/lang/transform'
 
 // ---------------------------------------------------------------------------
 // Draw style
@@ -107,7 +118,70 @@ class Context {
 // Property access
 // ---------------------------------------------------------------------------
 
+function isGeometric(v: Value): boolean {
+  return v.type === 'point2' || v.type === 'edge2' || v.type === 'rectangle'
+}
+
+function makeTransformMethod(obj: Value, name: string): Value {
+  return {
+    type: 'builtin',
+    name: `${obj.type}.${name}`,
+    fn: (args: Value[]) => {
+      switch (name) {
+        case 'translateX':
+          return transformValue(translationMatrix(asNumber(args[0], 'translateX'), 0), obj)
+        case 'translateY':
+          return transformValue(translationMatrix(0, asNumber(args[0], 'translateY')), obj)
+        case 'translate':
+          return transformValue(
+            translationMatrix(asNumber(args[0], 'translate x'), asNumber(args[1], 'translate y')),
+            obj,
+          )
+        case 'rotateX': {
+          if (args.length >= 2 && args[0].type === 'point2') {
+            return transformValue(rotateXAroundMatrix(args[0], asNumber(args[1], 'rotateX deg')), obj)
+          }
+          return transformValue(rotateXMatrix(asNumber(args[0], 'rotateX deg')), obj)
+        }
+        case 'rotateY': {
+          if (args.length >= 2 && args[0].type === 'point2') {
+            return transformValue(rotateYAroundMatrix(args[0], asNumber(args[1], 'rotateY deg')), obj)
+          }
+          return transformValue(rotateYMatrix(asNumber(args[0], 'rotateY deg')), obj)
+        }
+        case 'scale': {
+          if (args.length >= 2 && args[0].type === 'point2') {
+            return transformValue(scaleAroundMatrix(args[0], asNumber(args[1], 'scale factor')), obj)
+          }
+          return transformValue(scaleMatrix(asNumber(args[0], 'scale factor')), obj)
+        }
+        case 'mirror': {
+          if (args.length >= 2 && args[0].type === 'point2' && args[1].type === 'point2') {
+            return transformValue(mirrorMatrix(args[0], args[1]), obj)
+          }
+          if (args.length >= 1 && args[0].type === 'edge2') {
+            return transformValue(mirrorMatrix(args[0].start, args[0].end), obj)
+          }
+          throw new Error('mirror: expected (edge) or (point, point)')
+        }
+        default:
+          throw new Error(`Unknown transform method: ${name}`)
+      }
+    },
+  }
+}
+
+const transformMethods = new Set([
+  'translateX', 'translateY', 'translate',
+  'rotateX', 'rotateY',
+  'scale', 'mirror',
+])
+
 function getProperty(obj: Value, prop: string): Value {
+  if (isGeometric(obj) && transformMethods.has(prop)) {
+    return makeTransformMethod(obj, prop)
+  }
+
   switch (obj.type) {
     case 'point2':
       if (prop === 'x') return createNumber(obj.x)
@@ -154,7 +228,7 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer): Value {
     case 'Variable': {
       const v = ctx.lookup(expr.name)
       // Undefined variables resolve to their name as a string
-      if (v === undefined) return { type: 'string', value: expr.name }
+      if (v === undefined) return { type: 'null', sourceText: expr.name }
       return v
     }
 
@@ -274,21 +348,30 @@ function makeBuiltins(buf: DrawBuffer): Scope {
       createEdge({ x: x1.value, y: y1.value }, { x: x2.value, y: y2.value })),
   ]))
 
-  // Style builtins
-  scope.set('color', overloaded('color', [
-    sig([Str], (s): StyleVal => ({ type: 'style', fill: s.value })),
-  ]))
+  // Style builtins — accept null values with sourceText (e.g. color(red))
+  scope.set('color', {
+    type: 'builtin',
+    name: 'color',
+    fn: (args: Value[]) => {
+      if (args.length !== 1) throw new Error('color: expected 1 argument')
+      const s = asString(args[0], 'color')
+      return { type: 'style', fill: s } satisfies StyleVal
+    },
+  })
 
-  scope.set('stroke', overloaded('stroke', [
-    sig([Str], (s): StyleVal => ({ type: 'style', stroke: s.value })),
-  ]))
+  scope.set('stroke', {
+    type: 'builtin',
+    name: 'stroke',
+    fn: (args: Value[]) => {
+      if (args.length !== 1) throw new Error('stroke: expected 1 argument')
+      const s = asString(args[0], 'stroke')
+      return { type: 'style', stroke: s } satisfies StyleVal
+    },
+  })
 
   scope.set('translucent', overloaded('translucent', [
     sig([Num], (n): StyleVal => ({ type: 'style', opacity: n.value })),
   ]))
-
-  // dashed is a style constant, not a function
-  scope.set('dashed', { type: 'style', dashed: true } satisfies StyleVal)
 
   // draw is variadic: draw(geom..., style...)
   scope.set('draw', {
@@ -298,11 +381,12 @@ function makeBuiltins(buf: DrawBuffer): Scope {
       const batch: DrawBatch = { points: [], edges: [], polygons: [], style: {} }
       for (const a of args) {
         if (a.type === 'style') {
-          // Merge style properties
           if (a.fill !== undefined) batch.style.fill = a.fill
           if (a.stroke !== undefined) batch.style.stroke = a.stroke
           if (a.opacity !== undefined) batch.style.opacity = a.opacity
           if (a.dashed !== undefined) batch.style.dashed = a.dashed
+        } else if (a.type === 'null' && a.sourceText === 'dashed') {
+          batch.style.dashed = true
         } else {
           collectDrawable(a, batch)
         }
