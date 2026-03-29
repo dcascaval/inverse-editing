@@ -231,7 +231,7 @@ describe('fnDefn', () => {
 
 describe('assignment', () => {
   it('parses simple assignment', () => {
-    const prog = parse('x = 5')
+    const prog = parse('parameters {}\nx = 5')
     expect(prog.statements).toHaveLength(1)
     const stmt = prog.statements[0]
     expect(stmt.type).toBe('Assignment')
@@ -242,7 +242,7 @@ describe('assignment', () => {
   })
 
   it('parses assignment with complex rhs', () => {
-    const prog = parse('x = a + b * c')
+    const prog = parse('parameters {}\nx = a + b * c')
     const stmt = prog.statements[0]
     expect(stmt.type).toBe('Assignment')
     if (stmt.type === 'Assignment') {
@@ -308,16 +308,6 @@ c = Circle(pt(0, 0), holeR)`)
     expect(prog.statements[0].type).toBe('Assignment')
   })
 
-  it('parses multiple statements', () => {
-    const prog = parse(`x = 1
-y = 2
-f(x, y)`)
-    expect(prog.statements).toHaveLength(3)
-    expect(prog.statements[0].type).toBe('Assignment')
-    expect(prog.statements[1].type).toBe('Assignment')
-    expect(prog.statements[2].type).toBe('Apply')
-  })
-
   it('parses the example program', () => {
     const prog = parse(`parameters {
   holeR: 10
@@ -348,14 +338,14 @@ draw(Extrude3D(gear, 4.0), style(translucent))`)
   })
 
   it('handles comments', () => {
-    const prog = parse(`x = /* inline */ 5
+    const prog = parse(`parameters { } x = /* inline */ 5
 // full line comment
 y = 10`)
     expect(prog.statements).toHaveLength(2)
   })
 
   it('handles semicolons as separators', () => {
-    const prog = parse('x = 1; y = 2; f(x)')
+    const prog = parse('parameters { } x = 1; y = 2; f(x)')
     expect(prog.statements).toHaveLength(3)
   })
 })

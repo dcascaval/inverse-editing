@@ -83,7 +83,7 @@ export type Expression =
 export type AST = ParameterStmt | Expression
 
 export interface Program {
-  parameters: ParameterStmt | null
+  parameters: ParameterStmt;
   statements: Expression[]
 }
 

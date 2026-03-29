@@ -75,7 +75,7 @@ const parenLambda = apply(
       opt_sc(list_sc(kright(_, tok(Token.Ident)), kright(tok(Token.Comma), _))),
       seq(_, tok(Token.RParen)),
     ),
-    kright(tok(Token.Arrow), expr),
+    kright(tok(Token.Arrow), stmt),
   ),
   ([params, body]): Expression => ({
     type: 'Lambda',
@@ -88,7 +88,7 @@ const parenLambda = apply(
 const identExpr = alt_sc(
   // ident => body (lambda with single param)
   apply(
-    seq(tok(Token.Ident), kright(tok(Token.Arrow), expr)),
+    seq(tok(Token.Ident), kright(tok(Token.Arrow), stmt)),
     ([param, body]): Expression => ({
       type: 'Lambda',
       params: [param.text],
@@ -309,12 +309,12 @@ const parameterBlock = apply(
 const program = apply(
   seq(
     _,
-    opt_sc(kleft(parameterBlock, _)),
+    kleft(parameterBlock, _),
     opt_sc(list_sc(stmt, sep)),
     _,
   ),
   ([, parameters, statements]): Program => ({
-    parameters: parameters ?? null,
+    parameters,
     statements: statements ?? [],
   }),
 )

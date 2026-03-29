@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { Point2, Edge2 } from '@/lang/values'
 
 export interface Slider {
   name: string
@@ -15,6 +16,10 @@ interface Store {
   sliders: Slider[]
   setSliders: (sliders: Slider[]) => void
   setSliderValue: (name: string, value: number) => void
+
+  scenePoints: Point2[]
+  sceneEdges: Edge2[]
+  setScene: (points: Point2[], edges: Edge2[]) => void
 }
 
 export const useStore = create<Store>((set) => ({
@@ -26,7 +31,11 @@ export const useStore = create<Store>((set) => ({
   setSliderValue: (name, value) =>
     set((state) => ({
       sliders: state.sliders.map((s) =>
-        s.name === name ? { ...s, value } : s
+        s.name === name ? { ...s, value } : s,
       ),
     })),
+
+  scenePoints: [],
+  sceneEdges: [],
+  setScene: (scenePoints, sceneEdges) => set({ scenePoints, sceneEdges }),
 }))
