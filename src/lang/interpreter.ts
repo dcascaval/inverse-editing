@@ -14,8 +14,6 @@ import { getProperty, makeBuiltins } from '@/lang/stdlib'
 
 
 // Draw style
-
-
 export type DrawStyle = {
   fill?: string
   stroke?: string
@@ -23,9 +21,7 @@ export type DrawStyle = {
   dashed?: boolean
 }
 
-
 // Draw buffer — batched per draw() call
-
 
 export type Polygon2 = {
   vertices: Point2[]

@@ -16,7 +16,6 @@ import type { LineageGraph } from '@/lang/lineage'
 // Column-major elements layout:
 //   [a, b, 0, c, d, 0, tx, ty, 1]
 
-
 export type { Matrix3 }
 
 function mat(a: number, b: number, c: number, d: number, tx: number, ty: number): Matrix3 {
@@ -109,10 +108,9 @@ function transformRectangle(m: Matrix3, r: RectangleVal, g: LineageGraph): Recta
   const tl = transformPt(m, r.topLeft, g)
   const tr = transformPt(m, r.topRight, g)
   const result = createRectangle(bl, br, tl, tr, g)
-  g.direct(r.bottom, result.bottom)
-  g.direct(r.right, result.right)
-  g.direct(r.top, result.top)
-  g.direct(r.left, result.left)
+  for (let i = 0; i < r.edges.length; i++) {
+    g.direct(r.edges[i], result.edges[i])
+  }
   g.direct(r, result)
   return result
 }

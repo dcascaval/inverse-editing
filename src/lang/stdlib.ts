@@ -22,7 +22,7 @@ import {
   scaleMatrix,
   scaleAroundMatrix,
   mirrorMatrix,
-} from '@/lang/transform'
+} from '@/geometry/transform'
 import type { LineageGraph } from '@/lang/lineage'
 import * as Query from '@/lang/query'
 import type { DrawBatch, DrawBuffer } from '@/lang/interpreter'
@@ -167,6 +167,12 @@ type Scope = Map<string, Value>
 export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
   const scope: Scope = new Map()
 
+  const register = (name: string, fn: (args: Value[]) => Value) => {
+    scope.set(name, { type: 'builtin', name, fn })
+  }
+
+  // Geometry constructors
+
   scope.set('pt', overloaded('pt', [
     sig([Num, Num], (x, y) => createPoint(x.value, y.value)),
   ]))
@@ -191,134 +197,82 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
   ]))
 
   // Style builtins
-  scope.set('color', {
-    type: 'builtin',
-    name: 'color',
-    fn: (args: Value[]) => {
-      if (args.length !== 1) throw new Error('color: expected 1 argument')
-      const s = asString(args[0], 'color')
-      return { type: 'style', fill: s } satisfies StyleVal
-    },
+
+  register('color', (args) => {
+    if (args.length !== 1) throw new Error('color: expected 1 argument')
+    return { type: 'style', fill: asString(args[0], 'color') } satisfies StyleVal
   })
 
-  scope.set('stroke', {
-    type: 'builtin',
-    name: 'stroke',
-    fn: (args: Value[]) => {
-      if (args.length !== 1) throw new Error('stroke: expected 1 argument')
-      const s = asString(args[0], 'stroke')
-      return { type: 'style', stroke: s } satisfies StyleVal
-    },
+  register('stroke', (args) => {
+    if (args.length !== 1) throw new Error('stroke: expected 1 argument')
+    return { type: 'style', stroke: asString(args[0], 'stroke') } satisfies StyleVal
   })
 
   scope.set('translucent', overloaded('translucent', [
     sig([Num], (n): StyleVal => ({ type: 'style', opacity: n.value })),
   ]))
 
-  // draw is variadic: draw(geom..., style...)
-  scope.set('draw', {
-    type: 'builtin',
-    name: 'draw',
-    fn: (args: Value[]) => {
-      const batch: DrawBatch = { points: [], edges: [], polygons: [], style: {} }
-      for (const a of args) {
-        if (a.type === 'style') {
-          if (a.fill !== undefined) batch.style.fill = a.fill
-          if (a.stroke !== undefined) batch.style.stroke = a.stroke
-          if (a.opacity !== undefined) batch.style.opacity = a.opacity
-          if (a.dashed !== undefined) batch.style.dashed = a.dashed
-        } else if (a.type === 'null' && a.sourceText === 'dashed') {
-          batch.style.dashed = true
-        } else {
-          collectDrawable(a, batch)
-        }
+  // Draw
+
+  register('draw', (args) => {
+    const batch: DrawBatch = { points: [], edges: [], polygons: [], style: {} }
+    for (const a of args) {
+      if (a.type === 'style') {
+        if (a.fill !== undefined) batch.style.fill = a.fill
+        if (a.stroke !== undefined) batch.style.stroke = a.stroke
+        if (a.opacity !== undefined) batch.style.opacity = a.opacity
+        if (a.dashed !== undefined) batch.style.dashed = a.dashed
+      } else if (a.type === 'null' && a.sourceText === 'dashed') {
+        batch.style.dashed = true
+      } else {
+        collectDrawable(a, batch)
       }
-      if (batch.points.length > 0 || batch.edges.length > 0) {
-        buf.batches.push(batch)
-      }
-      return createNull()
-    },
+    }
+    if (batch.points.length > 0 || batch.edges.length > 0) {
+      buf.batches.push(batch)
+    }
+    return createNull()
   })
 
   // Lineage query builtins
 
-  scope.set('from', {
-    type: 'builtin',
-    name: 'from',
-    fn: (args: Value[]): Value => ({ type: 'query', query: Query.from(args) }),
+  register('from', (args) => ({ type: 'query', query: Query.from(args) }))
+  register('fromAny', (args) => ({ type: 'query', query: Query.fromAny(args) }))
+  register('derivedFrom', (args) => ({ type: 'query', query: Query.derivedFrom(args) }))
+  register('derivedFromAny', (args) => ({ type: 'query', query: Query.derivedFromAny(args) }))
+
+  register('contains', (args) => {
+    if (args.length !== 1 || args[0].type !== 'query')
+      throw new Error('contains: expected a query predicate')
+    return { type: 'query', query: Query.contains(args[0].query) }
   })
 
-  scope.set('fromAny', {
-    type: 'builtin',
-    name: 'fromAny',
-    fn: (args: Value[]): Value => ({ type: 'query', query: Query.fromAny(args) }),
+  register('not', (args) => {
+    if (args.length !== 1 || args[0].type !== 'query')
+      throw new Error('not: expected a query predicate')
+    return { type: 'query', query: Query.not(args[0].query) }
   })
 
-  scope.set('derivedFrom', {
-    type: 'builtin',
-    name: 'derivedFrom',
-    fn: (args: Value[]): Value => ({ type: 'query', query: Query.derivedFrom(args) }),
+  register('and', (args) => {
+    if (args.length !== 2 || args[0].type !== 'query' || args[1].type !== 'query')
+      throw new Error('and: expected two query predicates')
+    return { type: 'query', query: Query.and(args[0].query, args[1].query) }
   })
 
-  scope.set('derivedFromAny', {
-    type: 'builtin',
-    name: 'derivedFromAny',
-    fn: (args: Value[]): Value => ({ type: 'query', query: Query.derivedFromAny(args) }),
+  register('or', (args) => {
+    if (args.length !== 2 || args[0].type !== 'query' || args[1].type !== 'query')
+      throw new Error('or: expected two query predicates')
+    return { type: 'query', query: Query.or(args[0].query, args[1].query) }
   })
 
-  scope.set('contains', {
-    type: 'builtin',
-    name: 'contains',
-    fn: (args: Value[]): Value => {
-      if (args.length !== 1 || args[0].type !== 'query')
-        throw new Error('contains: expected a query predicate')
-      return { type: 'query', query: Query.contains(args[0].query) }
-    },
-  })
-
-  scope.set('not', {
-    type: 'builtin',
-    name: 'not',
-    fn: (args: Value[]): Value => {
-      if (args.length !== 1 || args[0].type !== 'query')
-        throw new Error('not: expected a query predicate')
-      return { type: 'query', query: Query.not(args[0].query) }
-    },
-  })
-
-  scope.set('and', {
-    type: 'builtin',
-    name: 'and',
-    fn: (args: Value[]): Value => {
-      if (args.length !== 2 || args[0].type !== 'query' || args[1].type !== 'query')
-        throw new Error('and: expected two query predicates')
-      return { type: 'query', query: Query.and(args[0].query, args[1].query) }
-    },
-  })
-
-  scope.set('or', {
-    type: 'builtin',
-    name: 'or',
-    fn: (args: Value[]): Value => {
-      if (args.length !== 2 || args[0].type !== 'query' || args[1].type !== 'query')
-        throw new Error('or: expected two query predicates')
-      return { type: 'query', query: Query.or(args[0].query, args[1].query) }
-    },
-  })
-
-  scope.set('query', {
-    type: 'builtin',
-    name: 'query',
-    fn: (args: Value[]): Value => {
-      const collection = args[0]
-      const predicate = args[1]
-      if (collection.type !== 'array')
-        throw new Error('query: first argument must be an array')
-      if (predicate.type !== 'query')
-        throw new Error('query: second argument must be a query predicate')
-      const filtered = Query.evaluateQuery(collection.elements, predicate.query, g)
-      return { type: 'array', elements: filtered }
-    },
+  register('query', (args) => {
+    const collection = args[0]
+    const predicate = args[1]
+    if (collection.type !== 'array')
+      throw new Error('query: first argument must be an array')
+    if (predicate.type !== 'query')
+      throw new Error('query: second argument must be a query predicate')
+    return { type: 'array', elements: Query.evaluateQuery(collection.elements, predicate.query, g) }
   })
 
   return scope
