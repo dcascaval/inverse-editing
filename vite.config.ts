@@ -4,9 +4,6 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  esbuild: {
-    jsx: 'automatic', 
-  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
