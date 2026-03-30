@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { run, drawnPointCount, drawnEdgeCount } from '@test/lang/lib'
+import { run, drawnPointCount, drawnEdgeCount } from '@test/lib'
 
 
 // from / fromAny (direct edges only)
