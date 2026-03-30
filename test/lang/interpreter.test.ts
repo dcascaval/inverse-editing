@@ -195,11 +195,24 @@ draw(pt(a, 0))`)
 
 
 describe('operation', () => {
-  it('defines and calls a named function', () => {
+  it('returns a scope with bindings accessible via dot access', () => {
     const { points } = drawn(`parameters {}
-operation makePoint(x, y) { pt(x, y) }
-draw(makePoint(5, 6))`)
+operation makePoint(x, y) { p = pt(x, y) }
+result = makePoint(5, 6)
+draw(result.p)`)
     expect(points).toEqual([{ x: 5, y: 6 }])
+  })
+
+  it('captures all assignments in the scope', () => {
+    const { points } = drawn(`parameters {}
+operation makePair(x) {
+  a = pt(x, 0)
+  b = pt(x, 1)
+}
+pair = makePair(3)
+draw(pair.a)
+draw(pair.b)`)
+    expect(points).toEqual([{ x: 3, y: 0 }, { x: 3, y: 1 }])
   })
 })
 
@@ -362,28 +375,22 @@ draw(pt(4, 0).scale(pt(2, 0), 3))`)
     approxPt(points[0], 8, 0)
   })
 
-  it('rotateX compresses y', () => {
+  it('rotate 90 degrees around origin', () => {
     const { points } = drawn(`parameters {}
-draw(pt(1, 1).rotateX(90))`)
-    approxPt(points[0], 1, 0)
-  })
-
-  it('rotateY compresses x', () => {
-    const { points } = drawn(`parameters {}
-draw(pt(1, 1).rotateY(90))`)
+draw(pt(1, 0).rotate(90))`)
     approxPt(points[0], 0, 1)
   })
 
-  it('rotateX around center', () => {
+  it('rotate 180 degrees', () => {
     const { points } = drawn(`parameters {}
-draw(pt(0, 3).rotateX(pt(0, 1), 90))`)
-    approxPt(points[0], 0, 1)
+draw(pt(1, 0).rotate(180))`)
+    approxPt(points[0], -1, 0)
   })
 
-  it('rotateY around center', () => {
+  it('rotate around center', () => {
     const { points } = drawn(`parameters {}
-draw(pt(3, 0).rotateY(pt(1, 0), 90))`)
-    approxPt(points[0], 1, 0)
+draw(pt(2, 0).rotate(pt(1, 0), 90))`)
+    approxPt(points[0], 1, 1)
   })
 
   it('mirror about x-axis (via two points)', () => {

@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
 import { Line } from '@react-three/drei'
 import * as THREE from 'three'
 import { useStore } from '@/store'
 import type { DrawBatch } from '@/lang/interpreter'
+import { polygonsToGeometry } from '@/geometry/three'
 
 const DEFAULT_STROKE_COLOR = '#e4e4e7'
 const DEFAULT_POINT_COLOR = '#a1a1aa'
@@ -11,31 +12,18 @@ const DEFAULT_POINT_COLOR = '#a1a1aa'
 function BatchPolygons({ batch }: { batch: DrawBatch }) {
   const { polygons, style } = batch
 
-  const geometry = useMemo(() => {
-    if (polygons.length === 0) return null
-    const geo = new THREE.BufferGeometry()
-    const verts: number[] = []
-    // Triangulate each polygon as a fan from its first vertex
-    for (const poly of polygons) {
-      const vs = poly.vertices
-      for (let i = 1; i < vs.length - 1; i++) {
-        verts.push(vs[0].x, vs[0].y, 0)
-        verts.push(vs[i].x, vs[i].y, 0)
-        verts.push(vs[i + 1].x, vs[i + 1].y, 0)
-      }
-    }
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
-    return geo
-  }, [polygons])
+  const geometry = useMemo(() => polygonsToGeometry(polygons), [polygons])
 
-  if (!geometry || !style.fill) return null
+  if (!geometry) return null
+
+  const fill = style.fill ?? '#e4e4e7'
 
   const opacity = style.opacity ?? 1
 
   return (
     <mesh geometry={geometry}>
       <meshBasicMaterial
-        color={style.fill}
+        color={fill}
         transparent
         depthWrite={false}
         opacity={opacity}
@@ -68,13 +56,13 @@ function BatchEdges({ batch }: { batch: DrawBatch }) {
       points={points}
       segments
       color={color}
-      lineWidth={2}
+      lineWidth={1}
       transparent
       depthWrite={false}
       opacity={opacity}
       dashed={dashed}
-      dashSize={0.5}
-      gapSize={0.3}
+      dashSize={1.0}
+      gapSize={0.8}
     />
   )
 }
@@ -107,7 +95,7 @@ function BatchPoints({ batch }: { batch: DrawBatch }) {
       </bufferGeometry>
       <pointsMaterial
         color={color}
-        size={4}
+        size={6}
         sizeAttenuation={false}
         transparent
         depthWrite={false}
@@ -117,11 +105,21 @@ function BatchPoints({ batch }: { batch: DrawBatch }) {
   )
 }
 
+function CameraSetup() {
+  const camera = useThree((s) => s.camera)
+  useMemo(() => {
+    camera.lookAt(30, 30, 0)
+    camera.updateProjectionMatrix()
+  }, [camera])
+  return null
+}
+
 function Scene() {
   const scene = useStore((s) => s.scene)
 
   return (
     <>
+      <CameraSetup />
       {scene.map((batch, i) => (
         <group key={i} renderOrder={i}>
           <BatchPolygons batch={batch} />
@@ -136,10 +134,9 @@ function Scene() {
 export function Viewport() {
   return (
     <Canvas
+      frameloop='demand'
       orthographic
-      flat
-      gl={{ antialias: false, alpha: false }}
-      camera={{ position: [0, 0, 100], zoom: 10, near: 0.1, far: 1000 }}
+      camera={{ position: [30, 30, 100], zoom: 8, near: 0.1, far: 1000 }}
       style={{ background: '#18181b' }}
     >
       <Scene />

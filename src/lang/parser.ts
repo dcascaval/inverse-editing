@@ -49,12 +49,15 @@ const numberLit = apply(
   (t): Expression => ({ type: 'Literal', value: parseFloat(t.text) }),
 )
 
-/** Comma-separated argument list (zero or more), tolerant of newlines */
+/** Comma-separated argument list (zero or more), tolerant of newlines and trailing commas */
 const argList = apply(
   opt_sc(
-    list_sc(
-      kright(_, expr),
-      kright(tok(Token.Comma), _),
+    kleft(
+      list_sc(
+        kright(_, expr),
+        kright(tok(Token.Comma), _),
+      ),
+      opt_sc(tok(Token.Comma)),
     ),
   ),
   (r) => r ?? [],
@@ -161,7 +164,7 @@ type PostfixSuffix =
 
 const postfixSuffix = alt_sc(
   apply(
-    kright(tok(Token.Dot), tok(Token.Ident)),
+    kright(seq(_, tok(Token.Dot)), tok(Token.Ident)),
     (t): PostfixSuffix => ({ kind: 'prop', name: t.text }),
   ),
   apply(parenArgs, (args): PostfixSuffix => ({ kind: 'call', args })),

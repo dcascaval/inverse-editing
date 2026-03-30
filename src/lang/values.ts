@@ -63,6 +63,18 @@ export type RectangleVal = {
   edges: Edge2Val[]
 }
 
+export type PolygonVal = {
+  type: 'polygon'
+  points: Point2Val[]
+  edges: Edge2Val[]
+}
+
+export type RegionVal = {
+  type: 'region'
+  positive: PolygonVal[]
+  negative: PolygonVal[]
+}
+
 export type ArrayVal = {
   type: 'array'
   elements: Value[]
@@ -80,6 +92,18 @@ export type BuiltinFnVal = {
   fn: (args: Value[]) => Value
 }
 
+export type OperationVal = {
+  type: 'operation'
+  name: string
+  params: string[]
+  body: Expression[]
+}
+
+export type ScopeVal = {
+  type: 'scope'
+  bindings: Map<string, Value>
+}
+
 export type QueryVal = {
   type: 'query'
   query: Query
@@ -92,8 +116,12 @@ type RawValue =
   | Point2Val
   | Edge2Val
   | RectangleVal
+  | PolygonVal
+  | RegionVal
   | ArrayVal
   | LambdaVal
+  | OperationVal
+  | ScopeVal
   | BuiltinFnVal
   | QueryVal
 
@@ -135,11 +163,24 @@ export function createRectangle(
   }
 }
 
+export function createPolygon(points: Point2Val[], g: LineageGraph): PolygonVal {
+  const edges: Edge2Val[] = []
+  for (let i = 0; i < points.length; i++) {
+    edges.push(createEdge(points[i], points[(i + 1) % points.length], g))
+  }
+  return { type: 'polygon', points, edges }
+}
+
 export function constructRectangle(x: number, y: number, w: number, h: number, g: LineageGraph): RectangleVal {
-  const bl = createPoint(x, y)
-  const br = createPoint(x + w, y)
-  const tl = createPoint(x, y + h)
-  const tr = createPoint(x + w, y + h)
+  // Normalize so corners are always CCW regardless of sign of w/h
+  const x0 = Math.min(x, x + w)
+  const y0 = Math.min(y, y + h)
+  const x1 = Math.max(x, x + w)
+  const y1 = Math.max(y, y + h)
+  const bl = createPoint(x0, y0)
+  const br = createPoint(x1, y0)
+  const tl = createPoint(x0, y1)
+  const tr = createPoint(x1, y1)
   return createRectangle(bl, br, tl, tr, g)
 }
 
@@ -164,8 +205,12 @@ export function showValue(v: Value): string {
     case 'point2': return `pt(${v.x}, ${v.y})`
     case 'edge2': return `edge(${v.start.x},${v.start.y} -> ${v.end.x},${v.end.y})`
     case 'rectangle': return `rect(${v.x}, ${v.y}, ${v.width}, ${v.height})`
+    case 'polygon': return `<polygon(${v.points.length} pts)>`
+    case 'region': return `<region(${v.positive.length}+, ${v.negative.length}-)>`
     case 'array': return `[${v.elements.map(showValue).join(', ')}]`
     case 'lambda': return `<lambda(${v.params.join(', ')})>`
+    case 'operation': return `<operation ${v.name}(${v.params.join(', ')})>`
+    case 'scope': return `<scope(${[...v.bindings.keys()].join(', ')})>`
     case 'builtin': return `<builtin:${v.name}>`
     case 'query': return showQuery(v.query)
   }

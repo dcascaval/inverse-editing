@@ -25,6 +25,7 @@ export type DrawStyle = {
 
 export type Polygon2 = {
   vertices: Point2[]
+  holes?: Point2[][]
 }
 
 export type DrawBatch = {
@@ -52,9 +53,17 @@ class Context {
   }
 
   lookup(name: string): Value | undefined {
+    // Exact match first
     for (let i = this.scopes.length - 1; i >= 0; i--) {
       const v = this.scopes[i].get(name)
       if (v !== undefined) return v
+    }
+    // Case-insensitive fallback
+    const lower = name.toLowerCase()
+    for (let i = this.scopes.length - 1; i >= 0; i--) {
+      for (const [k, v] of this.scopes[i]) {
+        if (k.toLowerCase() === lower) return v
+      }
     }
     return undefined
   }
@@ -69,6 +78,11 @@ class Context {
 
   pop() {
     this.scopes.pop()
+  }
+
+  /** Return all bindings in the topmost scope. */
+  topScope(): Map<string, Value> {
+    return new Map(this.scopes[this.scopes.length - 1])
   }
 }
 
@@ -157,6 +171,21 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
         }
       }
 
+      if (callee.type === 'operation') {
+        ctx.push()
+        try {
+          for (let i = 0; i < callee.params.length; i++) {
+            ctx.assign(callee.params[i], args[i] ?? createNull())
+          }
+          for (const stmt of callee.body) {
+            evaluate(stmt, ctx, buf, g)
+          }
+          return { type: 'scope', bindings: ctx.topScope() }
+        } finally {
+          ctx.pop()
+        }
+      }
+
       throw new Error(`Cannot call ${callee.type} ${showValue(callee)}`)
     }
 
@@ -177,9 +206,10 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
 
     case 'FnDefn': {
       const fn: Value = {
-        type: 'lambda',
+        type: 'operation',
+        name: expr.name,
         params: expr.params,
-        body: { type: 'Block', statements: expr.body },
+        body: expr.body,
       }
       ctx.assign(expr.name, fn)
       return fn

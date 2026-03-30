@@ -1,4 +1,4 @@
-import MonacoEditor from '@monaco-editor/react'
+import MonacoEditor, { type BeforeMount } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import { useStore } from '@/store'
 import { runProgram } from '@/execute'
@@ -6,6 +6,13 @@ import { runProgram } from '@/execute'
 export function Editor() {
   const code = useStore((s) => s.code)
   const setCode = useStore((s) => s.setCode)
+
+  const handleBeforeMount: BeforeMount = (monaco) => {
+    monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
+    })
+  }
 
   function handleMount(ed: editor.IStandaloneCodeEditor) {
     ed.addAction({
@@ -25,10 +32,11 @@ export function Editor() {
   return (
     <MonacoEditor
       height="100%"
-      defaultLanguage="plaintext"
       theme="vs-dark"
+      language="javascript"
       value={code}
       onChange={(v) => setCode(v ?? '')}
+      beforeMount={handleBeforeMount}
       onMount={handleMount}
       options={{
         minimap: { enabled: false },

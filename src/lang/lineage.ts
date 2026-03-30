@@ -9,6 +9,15 @@ export function containedElements(v: Value): Value[] {
       return [v, v.start, v.end]
     case 'rectangle':
       return [v, ...v.points, ...v.edges]
+    case 'polygon':
+      return [v, ...v.points, ...v.edges]
+    case 'region': {
+      const all: Value[] = [v]
+      for (const p of [...v.positive, ...v.negative]) {
+        all.push(...containedElements(p))
+      }
+      return all
+    }
     default:
       return [v]
   }

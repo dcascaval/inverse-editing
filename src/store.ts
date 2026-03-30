@@ -68,9 +68,12 @@ export const useStore = create<Store>()(
       },
 
       selectProgram: (index) => {
-        const { programs } = get()
+        const { programs, activeIndex, code } = get()
         if (index < 0 || index >= programs.length) return
-        set({ activeIndex: index, code: programs[index].code })
+        // Save current program before switching
+        const updated = [...programs]
+        updated[activeIndex] = { ...updated[activeIndex], code }
+        set({ programs: updated, activeIndex: index, code: updated[index].code })
       },
 
       newProgram: () => {

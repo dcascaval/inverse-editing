@@ -5,9 +5,12 @@ import {
   type Point2Val,
   type Edge2Val,
   type RectangleVal,
+  type PolygonVal,
+  type RegionVal,
   createPoint,
   createEdge,
   createRectangle,
+  createPolygon,
 } from '@/lang/values'
 import type { LineageGraph } from '@/lang/lineage'
 
@@ -39,16 +42,11 @@ export function translationMatrix(tx: number, ty: number): Matrix3 {
   return mat(1, 0, 0, 1, tx, ty)
 }
 
-/** Rotate around X axis projected to 2D — scales Y by cos(θ) */
-export function rotateXMatrix(degrees: number): Matrix3 {
-  const c = Math.cos(degrees * Math.PI / 180)
-  return mat(1, 0, 0, c, 0, 0)
-}
-
-/** Rotate around Y axis projected to 2D — scales X by cos(θ) */
-export function rotateYMatrix(degrees: number): Matrix3 {
-  const c = Math.cos(degrees * Math.PI / 180)
-  return mat(c, 0, 0, 1, 0, 0)
+/** Standard 2D rotation (around Z axis) by the given angle in degrees. */
+export function rotateMatrix(degrees: number): Matrix3 {
+  const r = degrees * Math.PI / 180
+  const c = Math.cos(r), s = Math.sin(r)
+  return mat(c, s, -s, c, 0, 0)
 }
 
 export function scaleMatrix(f: number): Matrix3 {
@@ -61,12 +59,8 @@ function aroundCenter(center: Point2, inner: Matrix3): Matrix3 {
   return post.multiply(inner).multiply(pre)
 }
 
-export function rotateXAroundMatrix(center: Point2, degrees: number): Matrix3 {
-  return aroundCenter(center, rotateXMatrix(degrees))
-}
-
-export function rotateYAroundMatrix(center: Point2, degrees: number): Matrix3 {
-  return aroundCenter(center, rotateYMatrix(degrees))
+export function rotateAroundMatrix(center: Point2, degrees: number): Matrix3 {
+  return aroundCenter(center, rotateMatrix(degrees))
 }
 
 export function scaleAroundMatrix(center: Point2, f: number): Matrix3 {
@@ -115,11 +109,31 @@ function transformRectangle(m: Matrix3, r: RectangleVal, g: LineageGraph): Recta
   return result
 }
 
+function transformPolygon(m: Matrix3, p: PolygonVal, g: LineageGraph): PolygonVal {
+  const pts = p.points.map((pt) => transformPt(m, pt, g))
+  const result = createPolygon(pts, g)
+  for (let i = 0; i < p.edges.length; i++) {
+    g.direct(p.edges[i], result.edges[i])
+  }
+  g.direct(p, result)
+  return result
+}
+
+function transformRegion(m: Matrix3, r: RegionVal, g: LineageGraph): RegionVal {
+  const positive = r.positive.map((p) => transformPolygon(m, p, g))
+  const negative = r.negative.map((p) => transformPolygon(m, p, g))
+  const result: RegionVal = { type: 'region', positive, negative }
+  g.direct(r, result)
+  return result
+}
+
 export function transformValue(m: Matrix3, v: Value, g: LineageGraph): Value {
   switch (v.type) {
     case 'point2': return transformPt(m, v, g)
     case 'edge2': return transformEdge(m, v, g)
     case 'rectangle': return transformRectangle(m, v, g)
+    case 'polygon': return transformPolygon(m, v, g)
+    case 'region': return transformRegion(m, v, g)
     default: throw new Error(`Cannot transform ${v.type}`)
   }
 }

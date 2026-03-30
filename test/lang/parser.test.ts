@@ -179,6 +179,11 @@ describe('property access and apply', () => {
   it('property access on call result', () => {
     expect(s('f(x).y')).toBe('f(x).y')
   })
+
+  it('dot access across newlines', () => {
+    const program = parse('parameters {}\nfoo(a, b)\n.bar(c)')
+    expect(show(program.statements[0])).toBe('foo(a, b).bar(c)')
+  })
 })
 
 

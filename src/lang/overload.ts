@@ -5,6 +5,8 @@ import type {
   Point2Val,
   Edge2Val,
   RectangleVal,
+  PolygonVal,
+  RegionVal,
   ArrayVal,
   BuiltinFnVal,
 } from '@/lang/values'
@@ -27,6 +29,8 @@ export const Sty: TypeTag<StyleVal> = tag('style', 'style')
 export const Pt2: TypeTag<Point2Val> = tag('point2', 'point2')
 export const Edg: TypeTag<Edge2Val> = tag('edge2', 'edge2')
 export const Rct: TypeTag<RectangleVal> = tag('rectangle', 'rectangle')
+export const Pgn: TypeTag<PolygonVal> = tag('polygon', 'polygon')
+export const Rgn: TypeTag<RegionVal> = tag('region', 'region')
 export const Arr: TypeTag<ArrayVal> = tag('array', 'array')
 export const Any: TypeTag<Value> = { label: 'any', match: (_v): _v is Value => true }
 
@@ -43,7 +47,7 @@ type Overload = {
   readonly fn: (...args: never[]) => Value
 }
 
-export function sig<const T extends readonly TypeTag[]>(
+export function signature<const T extends readonly TypeTag[]>(
   tags: T,
   fn: (...args: Infer<T>) => Value,
 ): Overload {

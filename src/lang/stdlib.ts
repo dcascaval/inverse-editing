@@ -10,15 +10,14 @@ import {
   createEdge,
   asNumber,
   asString,
+  showValue,
 } from '@/lang/values'
-import { overloaded, sig, Num, Pt2 } from '@/lang/overload'
+import { overloaded, signature, Num, Pt2, Rct, Pgn } from '@/lang/overload'
 import {
   transformValue,
   translationMatrix,
-  rotateXMatrix,
-  rotateYMatrix,
-  rotateXAroundMatrix,
-  rotateYAroundMatrix,
+  rotateMatrix,
+  rotateAroundMatrix,
   scaleMatrix,
   scaleAroundMatrix,
   mirrorMatrix,
@@ -26,6 +25,8 @@ import {
 import type { LineageGraph } from '@/lang/lineage'
 import * as Query from '@/lang/query'
 import type { DrawBatch, DrawBuffer } from '@/lang/interpreter'
+import { type BooleanOp, booleanOperation } from '@/geometry/boolean'
+import { distributeHoles } from '@/geometry/polygon'
 
 
 // Draw helpers
@@ -50,6 +51,17 @@ function collectDrawable(v: Value, batch: DrawBatch) {
       for (const e of v.edges) batch.edges.push(edge2(e))
       batch.polygons.push({ vertices: v.points.map(pt2) })
       break
+    case 'polygon':
+      for (const e of v.edges) batch.edges.push(edge2(e))
+      batch.polygons.push({ vertices: v.points.map(pt2) })
+      break
+    case 'region': {
+      for (const poly of distributeHoles(v)) batch.polygons.push(poly)
+      for (const p of [...v.positive, ...v.negative]) {
+        for (const e of p.edges) batch.edges.push(edge2(e))
+      }
+      break
+    }
     case 'array':
       for (const el of v.elements) collectDrawable(el, batch)
       break
@@ -62,6 +74,7 @@ function collectDrawable(v: Value, batch: DrawBatch) {
 
 function isGeometric(v: Value): boolean {
   return v.type === 'point2' || v.type === 'edge2' || v.type === 'rectangle'
+    || v.type === 'polygon' || v.type === 'region'
 }
 
 function makeTransformMethod(obj: Value, name: string, g: LineageGraph): Value {
@@ -79,17 +92,11 @@ function makeTransformMethod(obj: Value, name: string, g: LineageGraph): Value {
             translationMatrix(asNumber(args[0], 'translate x'), asNumber(args[1], 'translate y')),
             obj, g,
           )
-        case 'rotateX': {
+        case 'rotate': {
           if (args.length >= 2 && args[0].type === 'point2') {
-            return transformValue(rotateXAroundMatrix(args[0], asNumber(args[1], 'rotateX deg')), obj, g)
+            return transformValue(rotateAroundMatrix(args[0], asNumber(args[1], 'rotate deg')), obj, g)
           }
-          return transformValue(rotateXMatrix(asNumber(args[0], 'rotateX deg')), obj, g)
-        }
-        case 'rotateY': {
-          if (args.length >= 2 && args[0].type === 'point2') {
-            return transformValue(rotateYAroundMatrix(args[0], asNumber(args[1], 'rotateY deg')), obj, g)
-          }
-          return transformValue(rotateYMatrix(asNumber(args[0], 'rotateY deg')), obj, g)
+          return transformValue(rotateMatrix(asNumber(args[0], 'rotate deg')), obj, g)
         }
         case 'scale': {
           if (args.length >= 2 && args[0].type === 'point2') {
@@ -115,7 +122,7 @@ function makeTransformMethod(obj: Value, name: string, g: LineageGraph): Value {
 
 const transformMethods = new Set([
   'translateX', 'translateY', 'translate',
-  'rotateX', 'rotateY',
+  'rotate',
   'scale', 'mirror',
 ])
 
@@ -151,9 +158,50 @@ export function getProperty(obj: Value, prop: string, g: LineageGraph): Value {
         case 'edges': return { type: 'array', elements: obj.edges }
       }
       break
+    case 'polygon':
+      if (prop === 'points') return { type: 'array', elements: obj.points }
+      if (prop === 'edges') return { type: 'array', elements: obj.edges }
+      break
+    case 'region': {
+      if (prop === 'positive') return { type: 'array', elements: obj.positive }
+      if (prop === 'negative') return { type: 'array', elements: obj.negative }
+      const allPolys = [...obj.positive, ...obj.negative]
+      if (prop === 'points') return { type: 'array', elements: allPolys.flatMap((p) => p.points) }
+      if (prop === 'edges') return { type: 'array', elements: allPolys.flatMap((p) => p.edges) }
+      if (prop === 'single') return {
+        type: 'builtin', name: 'region.single',
+        fn: () => {
+          if (obj.positive.length !== 1)
+            throw new Error(`single: expected region with 1 positive polygon, got ${obj.positive.length}`)
+          return obj.positive[0]
+        },
+      }
+      break
+    }
     case 'array':
       if (prop === 'length') return createNumber(obj.elements.length)
+      if (prop === 'single') return {
+        type: 'builtin', name: 'array.single',
+        fn: () => {
+          if (obj.elements.length !== 1)
+            throw new Error(`single: expected array of length 1, got ${obj.elements.length}`)
+          return obj.elements[0]
+        },
+      }
+      if (prop === 'empty') return {
+        type: 'builtin', name: 'array.empty',
+        fn: () => {
+          if (obj.elements.length !== 0)
+            throw new Error(`empty: expected empty array, got length ${obj.elements.length}`)
+          return createNull()
+        },
+      }
       break
+    case 'scope': {
+      const val = obj.bindings.get(prop)
+      if (val !== undefined) return val
+      break
+    }
   }
   throw new Error(`No property '${prop}' on ${obj.type}`)
 }
@@ -167,20 +215,35 @@ type Scope = Map<string, Value>
 export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
   const scope: Scope = new Map()
 
-  const register = (name: string, fn: (args: Value[]) => Value) => {
-    scope.set(name, { type: 'builtin', name, fn })
+  const register = (name: string, fn: (args: Value[]) => Value, ...aliases: string[]) => {
+    const val: Value = { type: 'builtin', name, fn }
+    scope.set(name, val)
+    for (const a of aliases) scope.set(a, val)
+  }
+
+  const alias = (name: string, ...aliases: string[]) => {
+    const val = scope.get(name);
+    if (!val) return;
+    for (const a of aliases) scope.set(a, val)
   }
 
   // Geometry constructors
 
   scope.set('pt', overloaded('pt', [
-    sig([Num, Num], (x, y) => createPoint(x.value, y.value)),
+    signature([Num, Num], (x, y) => createPoint(x.value, y.value)),
+  ]))
+
+  scope.set('square', overloaded('square', [
+    signature([Num, Num, Num], (x, y, s) =>
+      constructRectangle(x.value, y.value, s.value, s.value, g)),
   ]))
 
   scope.set('rect', overloaded('rect', [
-    sig([Num, Num, Num, Num], (x, y, w, h) =>
+    signature([Num, Num, Num, Num], (x, y, w, h) =>
       constructRectangle(x.value, y.value, w.value, h.value, g)),
-    sig([Pt2, Pt2], (p1, p2) =>
+    signature([Pt2, Num, Num], (p, w, h) =>
+      constructRectangle(p.x, p.y, w.value, h.value, g)),
+    signature([Pt2, Pt2], (p1, p2) =>
       constructRectangle(
         Math.min(p1.x, p2.x),
         Math.min(p1.y, p2.y),
@@ -190,11 +253,20 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
       )),
   ]))
 
+  alias('rect', 'rectangle')
+
   scope.set('edge', overloaded('edge', [
-    sig([Pt2, Pt2], (p1, p2) => createEdge(p1, p2, g)),
-    sig([Num, Num, Num, Num], (x1, y1, x2, y2) =>
+    signature([Pt2, Pt2], (p1, p2) => createEdge(p1, p2, g)),
+    signature([Num, Num, Num, Num], (x1, y1, x2, y2) =>
       createEdge(createPoint(x1.value, y1.value), createPoint(x2.value, y2.value), g)),
   ]))
+
+  // Debug
+
+  register('print', (args) => {
+    console.log(args.map(showValue).join(' '))
+    return createNull()
+  })
 
   // Style builtins
 
@@ -209,7 +281,7 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
   })
 
   scope.set('translucent', overloaded('translucent', [
-    sig([Num], (n): StyleVal => ({ type: 'style', opacity: n.value })),
+    signature([Num], (n): StyleVal => ({ type: 'style', opacity: n.value })),
   ]))
 
   // Draw
@@ -228,7 +300,13 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
         collectDrawable(a, batch)
       }
     }
-    if (batch.points.length > 0 || batch.edges.length > 0) {
+    // Dashed style suppresses polygon fills
+    if (batch.style.dashed) batch.polygons = []
+    // color() applies to both fills and edges; stroke() is edges only
+    if (batch.style.fill && !batch.style.stroke && batch.edges.length > 0) {
+      batch.style.stroke = batch.style.fill
+    }
+    if (batch.points.length > 0 || batch.edges.length > 0 || batch.polygons.length > 0) {
       buf.batches.push(batch)
     }
     return createNull()
@@ -274,6 +352,40 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
       throw new Error('query: second argument must be a query predicate')
     return { type: 'array', elements: Query.evaluateQuery(collection.elements, predicate.query, g) }
   })
+
+  // Assertions
+
+  register('single', (args) => {
+    if (args.length !== 1 || args[0].type !== 'array')
+      throw new Error('single: expected one array argument')
+    const arr = args[0].elements
+    if (arr.length !== 1)
+      throw new Error(`single: expected array of length 1, got ${arr.length}`)
+    return arr[0]
+  })
+
+  register('empty', (args) => {
+    if (args.length !== 1 || args[0].type !== 'array')
+      throw new Error('empty: expected one array argument')
+    const arr = args[0].elements
+    if (arr.length !== 0)
+      throw new Error(`empty: expected empty array, got length ${arr.length}`)
+    return createNull()
+  })
+
+  // Boolean operations
+
+  const boolOp = (op: BooleanOp) =>
+    overloaded(op, [
+      signature([Rct, Rct], (a, b) => booleanOperation(a, b, op, g)),
+      signature([Pgn, Pgn], (a, b) => booleanOperation(a, b, op, g)),
+      signature([Rct, Pgn], (a, b) => booleanOperation(a, b, op, g)),
+      signature([Pgn, Rct], (a, b) => booleanOperation(a, b, op, g)),
+    ])
+
+  scope.set('union', boolOp('union'))
+  scope.set('difference', boolOp('difference'))
+  scope.set('intersection', boolOp('intersection'))
 
   return scope
 }
