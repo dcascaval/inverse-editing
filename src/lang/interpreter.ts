@@ -5,9 +5,10 @@ import {
   type Edge2,
   createNumber,
   createNull,
-  asNumber,
+  asNumeric,
   showValue,
 } from '@/lang/values'
+import { real } from '@/lang/numeric'
 import { LineageGraph } from '@/lang/lineage'
 import * as Query from '@/lang/query'
 import { getProperty, makeBuiltins } from '@/lang/stdlib'
@@ -93,7 +94,7 @@ class Context {
 function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGraph): Value {
   switch (expr.type) {
     case 'Literal':
-      return createNumber(expr.value)
+      return createNumber(real(expr.value))
 
     case 'Variable': {
       const v = ctx.lookup(expr.name)
@@ -122,15 +123,15 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
         return { type: 'query', query: Query.or(lhs.query, rhs.query) }
       }
 
-      const l = asNumber(lhs, `left of '${expr.op}'`)
-      const r = asNumber(rhs, `right of '${expr.op}'`)
+      const l = asNumeric(lhs, `left of '${expr.op}'`)
+      const r = asNumeric(rhs, `right of '${expr.op}'`)
       switch (expr.op) {
-        case '+': return createNumber(l + r)
-        case '-': return createNumber(l - r)
-        case '*': return createNumber(l * r)
-        case '/': return createNumber(l / r)
-        case '%': return createNumber(l % r)
-        case '**': return createNumber(l ** r)
+        case '+': return createNumber(l.add(r))
+        case '-': return createNumber(l.sub(r))
+        case '*': return createNumber(l.mul(r))
+        case '/': return createNumber(l.div(r))
+        case '%': return createNumber(l.mod(r))
+        case '**': return createNumber(l.pow(r))
         default: throw new Error(`Unknown operator: ${expr.op}`)
       }
     }
@@ -142,9 +143,9 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
           throw new Error(`'not' requires a query operand, got ${arg.type}`)
         return { type: 'query', query: Query.not(arg.query) }
       }
-      const n = asNumber(arg, `unary '${expr.op}'`)
-      if (expr.op === '-') return createNumber(-n)
-      if (expr.op === '+') return createNumber(+n)
+      const n = asNumeric(arg, `unary '${expr.op}'`)
+      if (expr.op === '-') return createNumber(n.neg())
+      if (expr.op === '+') return createNumber(n)
       throw new Error(`Unknown unary operator: ${expr.op}`)
     }
 

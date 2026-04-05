@@ -17,11 +17,11 @@ export function pointInPolygon(pt: Point2, poly: Point2[]): boolean {
 /** Distribute negative polygons as holes into their containing positive polygons. */
 export function distributeHoles(region: RegionVal): Polygon2[] {
   const positives: Polygon2[] = region.positive.map((p) => ({
-    vertices: p.points.map((v) => ({ x: v.x, y: v.y })),
+    vertices: p.points.map((v) => ({ x: v.x.toNumber(), y: v.y.toNumber() })),
     holes: [],
   }))
   for (const neg of region.negative) {
-    const holeVerts = neg.points.map((v) => ({ x: v.x, y: v.y }))
+    const holeVerts = neg.points.map((v) => ({ x: v.x.toNumber(), y: v.y.toNumber() }))
     const testPt = holeVerts[0]
     for (const pos of positives) {
       if (pointInPolygon(testPt, pos.vertices)) {

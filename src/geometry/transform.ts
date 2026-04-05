@@ -29,8 +29,8 @@ function mat(a: number, b: number, c: number, d: number, tx: number, ty: number)
 
 const _v = new Vector3()
 
-function applyToPoint(m: Matrix3, p: Point2): Point2 {
-  _v.set(p.x, p.y, 1).applyMatrix3(m)
+function applyToPoint(m: Matrix3, p: Point2Val): Point2 {
+  _v.set(p.x.toNumber(), p.y.toNumber(), 1).applyMatrix3(m)
   return { x: _v.x, y: _v.y }
 }
 
@@ -53,23 +53,24 @@ export function scaleMatrix(f: number): Matrix3 {
   return mat(f, 0, 0, f, 0, 0)
 }
 
-function aroundCenter(center: Point2, inner: Matrix3): Matrix3 {
-  const pre = translationMatrix(-center.x, -center.y)
-  const post = translationMatrix(center.x, center.y)
+function aroundCenter(center: Point2Val, inner: Matrix3): Matrix3 {
+  const cx = center.x.toNumber(), cy = center.y.toNumber()
+  const pre = translationMatrix(-cx, -cy)
+  const post = translationMatrix(cx, cy)
   return post.multiply(inner).multiply(pre)
 }
 
-export function rotateAroundMatrix(center: Point2, degrees: number): Matrix3 {
+export function rotateAroundMatrix(center: Point2Val, degrees: number): Matrix3 {
   return aroundCenter(center, rotateMatrix(degrees))
 }
 
-export function scaleAroundMatrix(center: Point2, f: number): Matrix3 {
+export function scaleAroundMatrix(center: Point2Val, f: number): Matrix3 {
   return aroundCenter(center, scaleMatrix(f))
 }
 
-export function mirrorMatrix(p1: Point2, p2: Point2): Matrix3 {
-  const dx = p2.x - p1.x
-  const dy = p2.y - p1.y
+export function mirrorMatrix(p1: Point2Val, p2: Point2Val): Matrix3 {
+  const dx = p2.x.toNumber() - p1.x.toNumber()
+  const dy = p2.y.toNumber() - p1.y.toNumber()
   const len2 = dx * dx + dy * dy
   if (len2 === 0) throw new Error('mirror: two distinct points required')
   const cos2 = (dx * dx - dy * dy) / len2

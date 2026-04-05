@@ -12,6 +12,7 @@ import {
   asString,
   showValue,
 } from '@/lang/values'
+import type { NumericValue } from '@/lang/numeric'
 import { overloaded, signature, Num, Pt2, Rct, Pgn } from '@/lang/overload'
 import {
   transformValue,
@@ -31,11 +32,11 @@ import { distributeHoles } from '@/geometry/polygon'
 
 // Draw helpers
 
-function pt2(p: { x: number; y: number }): Point2 {
-  return { x: p.x, y: p.y }
+function pt2(p: { x: NumericValue; y: NumericValue }): Point2 {
+  return { x: p.x.toNumber(), y: p.y.toNumber() }
 }
 
-function edge2(e: { start: { x: number; y: number }; end: { x: number; y: number } }): Edge2 {
+function edge2(e: { start: { x: NumericValue; y: NumericValue }; end: { x: NumericValue; y: NumericValue } }): Edge2 {
   return { start: pt2(e.start), end: pt2(e.end) }
 }
 
@@ -137,8 +138,8 @@ export function getProperty(obj: Value, prop: string, g: LineageGraph): Value {
       if (prop === 'y') return createNumber(obj.y)
       break
     case 'edge2':
-      if (prop === 'start') return createPoint(obj.start.x, obj.start.y)
-      if (prop === 'end') return createPoint(obj.end.x, obj.end.y)
+      if (prop === 'start') return obj.start
+      if (prop === 'end') return obj.end
       break
     case 'rectangle':
       switch (prop) {
@@ -245,10 +246,10 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
       constructRectangle(p.x, p.y, w.value, h.value, g)),
     signature([Pt2, Pt2], (p1, p2) =>
       constructRectangle(
-        Math.min(p1.x, p2.x),
-        Math.min(p1.y, p2.y),
-        Math.abs(p2.x - p1.x),
-        Math.abs(p2.y - p1.y),
+        p1.x.min(p2.x),
+        p1.y.min(p2.y),
+        p2.x.sub(p1.x).abs(),
+        p2.y.sub(p1.y).abs(),
         g,
       )),
   ]))
@@ -281,7 +282,7 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
   })
 
   scope.set('translucent', overloaded('translucent', [
-    signature([Num], (n): StyleVal => ({ type: 'style', opacity: n.value })),
+    signature([Num], (n): StyleVal => ({ type: 'style', opacity: n.value.toNumber() })),
   ]))
 
   // Draw

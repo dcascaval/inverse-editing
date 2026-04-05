@@ -516,7 +516,7 @@ function extractPoly(v: Value): { pts: Vec2[]; points: Point2Val[]; edges: Edge2
     case 'rectangle':
     case 'polygon':
       return {
-        pts: v.points.map((p) => ({ x: p.x, y: p.y })),
+        pts: v.points.map((p) => ({ x: p.x.toNumber(), y: p.y.toNumber() })),
         points: v.points,
         edges: v.edges,
       }
@@ -540,10 +540,10 @@ export function booleanOperation(
 
   // Seed vertex pool with original polygon vertices
   for (const pt of polyA.points) {
-    pool.getOrCreate(pt.x, pt.y).origin.sourcePoints.push(pt)
+    pool.getOrCreate(pt.x.toNumber(), pt.y.toNumber()).origin.sourcePoints.push(pt)
   }
   for (const pt of polyB.points) {
-    pool.getOrCreate(pt.x, pt.y).origin.sourcePoints.push(pt)
+    pool.getOrCreate(pt.x.toNumber(), pt.y.toNumber()).origin.sourcePoints.push(pt)
   }
 
   // Shatter both polygons at intersection points
