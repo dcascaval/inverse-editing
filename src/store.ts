@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { DrawBatch } from '@/lang/interpreter'
-import type { Tape } from '@/lang/tape'
+import type { Tape } from '@/lang/grad'
 
 export type Slider = {
   name: string
@@ -40,8 +40,7 @@ type Store = {
 
   // AD tape (not persisted)
   tape: Tape | null
-  parameterNodes: Map<string, number> | null
-  setTape: (tape: Tape | null, parameterNodes: Map<string, number> | null) => void
+  setTape: (tape: Tape | null) => void
 
   // Error (not persisted)
   error: string | null
@@ -110,8 +109,7 @@ export const useStore = create<Store>()(
       setScene: (scene) => set({ scene }),
 
       tape: null,
-      parameterNodes: null,
-      setTape: (tape, parameterNodes) => set({ tape, parameterNodes }),
+      setTape: (tape) => set({ tape }),
 
       error: null,
       setError: (error) => set({ error }),

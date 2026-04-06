@@ -1,7 +1,6 @@
 // Typed wrapper for nlopt-js — adapted from nlopt-js/src/nlopt.mjs
 
-import { GC } from './gc'
-
+import { GC } from '@/vendor/nlopt/gc'
 
 // TypeScript types for the nlopt API
 
@@ -89,7 +88,6 @@ export interface NLopt {
 
 // Module initialization
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function addHelpers(module: any, nlopt: any) {
   module.Vector.fromArray = function (arr: number[]) {
     const v = new module.Vector()
@@ -97,7 +95,6 @@ function addHelpers(module: any, nlopt: any) {
     return v
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   module.Vector.toArray = function (vec: any) {
     const a = new Array(vec.size())
     for (let k = 0; k < vec.size(); k++) a[k] = vec.get(k)
@@ -126,7 +123,6 @@ function addHelpers(module: any, nlopt: any) {
   }
 
   // Simplify argument syntax: auto-convert JS arrays/lambdas to WASM types
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const argsTransformMap: Record<string, any[]> = {
     setLowerBounds: [module.Vector],
     setUpperBounds: [module.Vector],
@@ -142,7 +138,7 @@ function addHelpers(module: any, nlopt: any) {
   for (const method of Object.keys(argsTransformMap)) {
     const argsTransform = argsTransformMap[method]
     const fun = nlopt.Optimize.prototype[method]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     nlopt.Optimize.prototype[method] = function (...args: any[]) {
       for (let k = 0; k < args.length; k++) {
         const t = argsTransform[k]
@@ -159,8 +155,8 @@ function addHelpers(module: any, nlopt: any) {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function loadEmscriptenModule(): Promise<any> {
+
   if (typeof window !== 'undefined') {
     // Browser: dynamic import (Vite handles this)
     const mod = await import('./nlopt_gen.cjs')
@@ -170,6 +166,7 @@ async function loadEmscriptenModule(): Promise<any> {
     const wasmBinary = await wasmResp.arrayBuffer()
     return factory({ wasmBinary })
   }
+
   // Node.js: use createRequire for CJS compat, load wasm from disk
   const { createRequire } = await import('module')
   const { readFileSync } = await import('fs')
@@ -196,8 +193,8 @@ nlopt.ready = (async () => {
   const classes = new Set(['Optimize'])
   nlopt.Optimize = GC.initClass(classes, wasmModule.Optimize)
   nlopt.Algorithm = wasmModule.Algorithm
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ;(nlopt as any).HEAPF64 = wasmModule.HEAPF64
+  
+  (nlopt as any).HEAPF64 = wasmModule.HEAPF64
   addHelpers(wasmModule, nlopt)
 })()
 

@@ -2,6 +2,7 @@ import type { Expression } from '@/lang/ast'
 import type { LineageGraph } from '@/lang/lineage'
 import { type Query, showQuery } from '@/lang/query'
 import { type NumericValue, real } from '@/lang/numeric'
+import { DualValue, type Tape } from '@/lang/grad'
 
 
 // Geometric primitives (plain data, used by store + renderer)
@@ -135,8 +136,13 @@ function toNV(v: NumericValue | number): NumericValue {
   return typeof v === 'number' ? real(v) : v
 }
 
-export const createNumber = (value: NumericValue | number): NumberVal =>
-  ({ type: 'number', value: toNV(value) })
+export function createNumber(value: NumericValue | number, tape?: Tape | null, paramName?: string): NumberVal {
+  if (tape && typeof value === 'number') {
+    const index = paramName ? tape.pushParam(paramName, value) : tape.pushConst(value)
+    return { type: 'number', value: new DualValue(tape, index) }
+  }
+  return { type: 'number', value: toNV(value) }
+}
 
 export const createNull = (): NullVal => ({ type: 'null' })
 

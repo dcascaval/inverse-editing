@@ -11,7 +11,7 @@ import {
 } from '@/lang/values'
 import type { NumericValue } from '@/lang/numeric'
 import { real } from '@/lang/numeric'
-import { dual, Tape } from '@/lang/grad'
+import { Tape } from '@/lang/grad'
 import { LineageGraph } from '@/lang/lineage'
 import * as Query from '@/lang/query'
 import { getProperty, makeBuiltins } from '@/lang/stdlib'
@@ -107,7 +107,7 @@ class Context {
 function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGraph, tape: Tape | null): Value {
   switch (expr.type) {
     case 'Literal':
-      return createNumber(tape ? dual(tape, expr.value) : real(expr.value))
+      return createNumber(expr.value, tape)
 
     case 'Variable': {
       const v = ctx.lookup(expr.name)
@@ -242,7 +242,6 @@ export type ExecutionResult = {
   lineage: LineageGraph
   error: Error | null
   tape: Tape | null
-  parameterNodes: Map<string, number> | null
 }
 
 export function executeProgram(
@@ -256,19 +255,12 @@ export function executeProgram(
   const ctx = new Context(builtins)
 
   const tape = mode === 'dual' ? new Tape() : null
-  const parameterNodes = tape ? new Map<string, number>() : null
 
   // Inject parameter values
   if (program.parameters) {
     for (const p of program.parameters.parameters) {
       const val = parameterValues?.get(p.name) ?? p.bounds.mid
-      if (tape && parameterNodes) {
-        const dv = dual(tape, val)
-        parameterNodes.set(p.name, dv.index)
-        ctx.assign(p.name, createNumber(dv))
-      } else {
-        ctx.assign(p.name, createNumber(val))
-      }
+      ctx.assign(p.name, createNumber(val, tape, p.name))
     }
   }
 
@@ -283,5 +275,5 @@ export function executeProgram(
     }
   }
 
-  return { drawBuffer: buf, lineage: g, error, tape, parameterNodes }
+  return { drawBuffer: buf, lineage: g, error, tape }
 }

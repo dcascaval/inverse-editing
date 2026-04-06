@@ -42,20 +42,17 @@ export const GC = {
     return flushed.length
   },
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   initClass(classes: Set<string>, Class: any): any {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const NewClass = function (...args: any[]) {
       const instance = new Class(...args)
       GC.add(instance)
       return instance
     }
+
     const targets = [Class, Class.prototype]
     for (const obj of targets) {
       for (const method of getStaticMethods(obj)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const fun = obj[method] as (...a: any[]) => any
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         obj[method] = function (this: any, ...args: any[]) {
           const rtn = fun.call(this, ...args)
           if (rtn && classes.has(rtn.constructor?.name)) {
@@ -65,10 +62,11 @@ export const GC = {
         }
       }
     }
+
     for (const method of getStaticMethods(Class)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(NewClass as any)[method] = Class[method]
+        (NewClass as any)[method] = Class[method]
     }
+    
     NewClass.prototype = Class.prototype
     return NewClass
   },

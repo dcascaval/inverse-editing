@@ -8,6 +8,11 @@ function vars(tape: Tape, ...values: number[]): DualValue[] {
   return values.map((v) => dual(tape, v))
 }
 
+function params(tape: Tape, entries: Record<string, number>): DualValue[] {
+  return Object.entries(entries).map(([name, v]) =>
+    new DualValue(tape, tape.pushParam(name, v)))
+}
+
 function grad1(tape: Tape, output: DualValue, x: DualValue): number {
   tape.reset()
   tape.backward(output.index)
@@ -225,20 +230,18 @@ describe('tape reset', () => {
 describe('computeGradient', () => {
   it('computes named parameter gradients', () => {
     const tape = new Tape()
-    const [a, b] = vars(tape, 3, 4)
-    const params = new Map([['a', a.index], ['b', b.index]])
+    const [a, b] = params(tape, { a: 3, b: 4 })
 
     // f = a * b, df/da = 4, df/db = 3
     const result = a.mul(b)
-    const grad = computeGradient(tape, result.index, params)
+    const grad = computeGradient(tape, result.index)
     expect(grad.get('a')).toBe(4)
     expect(grad.get('b')).toBe(3)
   })
 
   it('works with post-hoc tape extension', () => {
     const tape = new Tape()
-    const [x] = vars(tape, 5)
-    const params = new Map([['x', x.index]])
+    const [x] = params(tape, { x: 5 })
 
     // Simulate program output: y = x * x (primal = 25)
     const y = x.mul(x)
@@ -251,7 +254,7 @@ describe('computeGradient', () => {
     expect(loss.primal).toBe(25)
 
     // d(loss)/dx = 2*(x^2 - 20) * 2x = 2*5*10 = 100
-    const grad = computeGradient(tape, loss.index, params)
+    const grad = computeGradient(tape, loss.index)
     expect(grad.get('x')).toBe(100)
   })
 })
@@ -263,29 +266,25 @@ describe('computeGradient', () => {
 describe('extractSubTape (returns Tape)', () => {
   it('extracts only reachable nodes', () => {
     const tape = new Tape()
-    const params = new Map<string, number>()
 
     // x and y are parameters; z is unrelated
-    const [x, y, z] = vars(tape, 3, 4, 100)
-    params.set('x', x.index)
-    params.set('y', y.index)
-    // z is not a param but is on the tape
+    const [x, y] = params(tape, { x: 3, y: 4 })
+    const [z] = vars(tape, 100)
 
     const _unused = z.mul(z)   // not reachable from loss
     const loss = x.mul(y)      // only depends on x, y
 
-    const sub = extractSubTape(tape, loss.index, params)
+    const sub = extractSubTape(tape, loss.index)
     // Should contain 3 nodes: x, y, x*y. NOT z or z*z.
     expect(sub.nodes.length).toBe(3)
   })
 
   it('forward recomputes primals with new param values', () => {
     const tape = new Tape()
-    const [x] = vars(tape, 3)
-    const params = new Map([['x', x.index]])
+    const [x] = params(tape, { x: 3 })
 
     const loss = x.mul(x) // x^2
-    const sub = extractSubTape(tape, loss.index, params)
+    const sub = extractSubTape(tape, loss.index)
 
     // Original: x=3, loss=9
     expect(sub.forward(new Map([['x', 3]]))).toBe(9)
@@ -295,11 +294,10 @@ describe('extractSubTape (returns Tape)', () => {
 
   it('backward computes correct gradients', () => {
     const tape = new Tape()
-    const [x] = vars(tape, 3)
-    const params = new Map([['x', x.index]])
+    const [x] = params(tape, { x: 3 })
 
     const loss = x.mul(x)
-    const sub = extractSubTape(tape, loss.index, params)
+    const sub = extractSubTape(tape, loss.index)
 
     sub.forwardBackward(new Map([['x', 3]]))
     expect(sub.grad('x')).toBe(6)  // d(x^2)/dx = 2x = 6
@@ -311,11 +309,10 @@ describe('extractSubTape (returns Tape)', () => {
 
   it('forwardBackward convenience method', () => {
     const tape = new Tape()
-    const [x, y] = vars(tape, 3, 4)
-    const params = new Map([['x', x.index], ['y', y.index]])
+    const [x, y] = params(tape, { x: 3, y: 4 })
 
     const loss = x.mul(y) // f = x*y
-    const sub = extractSubTape(tape, loss.index, params)
+    const sub = extractSubTape(tape, loss.index)
 
     const lossVal = sub.forwardBackward(new Map([['x', 3], ['y', 4]]))
     expect(lossVal).toBe(12)
@@ -325,8 +322,7 @@ describe('extractSubTape (returns Tape)', () => {
 
   it('works with post-hoc loss on program tape', () => {
     const tape = new Tape()
-    const [x] = vars(tape, 5)
-    const params = new Map([['x', x.index]])
+    const [x] = params(tape, { x: 5 })
 
     // Simulate: program computes y = x*x + x (20 nodes of irrelevant stuff could be here)
     const y = x.mul(x).add(x) // x=5 → 30
@@ -336,7 +332,7 @@ describe('extractSubTape (returns Tape)', () => {
     const diff = y.sub(target)
     const loss = diff.mul(diff) // (30-20)^2 = 100
 
-    const sub = extractSubTape(tape, loss.index, params)
+    const sub = extractSubTape(tape, loss.index)
 
     // Verify initial
     expect(sub.forwardBackward(new Map([['x', 5]]))).toBe(100)
@@ -350,15 +346,14 @@ describe('extractSubTape (returns Tape)', () => {
 
   it('optimization loop converges', () => {
     const tape = new Tape()
-    const [x] = vars(tape, 10)
-    const params = new Map([['x', x.index]])
+    const [x] = params(tape, { x: 10 })
 
     // Loss: (x - 7)^2, minimum at x=7
     const target = dual(tape, 7)
     const diff = x.sub(target)
     const loss = diff.mul(diff)
 
-    const sub = extractSubTape(tape, loss.index, params)
+    const sub = extractSubTape(tape, loss.index)
     const lr = 0.1
     const p = new Map([['x', 10]])
 
@@ -372,8 +367,7 @@ describe('extractSubTape (returns Tape)', () => {
 
   it('multi-parameter optimization converges', () => {
     const tape = new Tape()
-    const [a, b] = vars(tape, 0, 0)
-    const params = new Map([['a', a.index], ['b', b.index]])
+    const [a, b] = params(tape, { a: 0, b: 0 })
 
     // Loss: (a - 3)^2 + (b - 4)^2, minimum at (3, 4)
     const ta = dual(tape, 3)
@@ -382,7 +376,7 @@ describe('extractSubTape (returns Tape)', () => {
     const db = b.sub(tb)
     const loss = da.mul(da).add(db.mul(db))
 
-    const sub = extractSubTape(tape, loss.index, params)
+    const sub = extractSubTape(tape, loss.index)
     const lr = 0.1
     const p = new Map([['a', 0], ['b', 0]])
 
@@ -398,12 +392,11 @@ describe('extractSubTape (returns Tape)', () => {
 
   it('excludes unreachable parameters from gradients', () => {
     const tape = new Tape()
-    const [x, y] = vars(tape, 3, 4)
-    const params = new Map([['x', x.index], ['y', y.index]])
+    const [x, _y] = params(tape, { x: 3, y: 4 })
 
     // Loss only depends on x
     const loss = x.mul(x)
-    const sub = extractSubTape(tape, loss.index, params)
+    const sub = extractSubTape(tape, loss.index)
 
     sub.forwardBackward(new Map([['x', 3]]))
     expect(sub.grad('x')).toBe(6)

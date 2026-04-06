@@ -28,8 +28,7 @@ function drawnEdges(src: string, paramValues?: Map<string, number>): AnnotatedEd
 
 /** Run backward from a DualValue and get gradient w.r.t. named parameter. */
 function gradOf(result: ReturnType<typeof runDual>, dv: DualValue, param: string): number {
-  const { tape, parameterNodes } = result
-  const grad = computeGradient(tape!, dv.index, parameterNodes!)
+  const grad = computeGradient(result.tape!, dv.index)
   return grad.get(param)!
 }
 
@@ -37,17 +36,15 @@ function gradOf(result: ReturnType<typeof runDual>, dv: DualValue, param: string
 // Dual mode execution
 
 describe('dual mode execution', () => {
-  it('returns tape and parameterNodes in dual mode', () => {
+  it('returns tape with paramIndices in dual mode', () => {
     const result = runDual('parameters { x: 5 }\ndraw(pt(x, 0))')
     expect(result.tape).not.toBeNull()
-    expect(result.parameterNodes).not.toBeNull()
-    expect(result.parameterNodes!.has('x')).toBe(true)
+    expect(result.tape!.paramIndices.has('x')).toBe(true)
   })
 
   it('returns tape: null in real mode', () => {
     const result = runReal('parameters { x: 5 }\ndraw(pt(x, 0))')
     expect(result.tape).toBeNull()
-    expect(result.parameterNodes).toBeNull()
   })
 
   it('primal values match real mode', () => {
@@ -137,19 +134,19 @@ draw(pt(a + b, a * b))`)
 describe('post-hoc tape extension', () => {
   it('compute distance-to-target gradient without re-evaluating program', () => {
     const result = runDual('parameters { x: 5 }\ndraw(pt(x * x, 0))')
-    const { tape, parameterNodes } = result
+    const tape = result.tape!
     const pts = result.drawBuffer.batches.flatMap((b) => b.points)
 
     // x*x = 25, target = 20
     const px = pts[0].sourceX as DualValue
-    const target = dual(tape!, 20)
+    const target = dual(tape, 20)
     const diff = px.sub(target)
     const loss = diff.mul(diff)  // (25 - 20)^2 = 25
 
     expect(loss.primal).toBe(25)
 
     // d(loss)/dx = 2*(x^2 - 20) * 2x = 2*5*10 = 100
-    const grad = computeGradient(tape!, loss.index, parameterNodes!)
+    const grad = computeGradient(tape, loss.index)
     expect(grad.get('x')).toBe(100)
   })
 
@@ -159,15 +156,15 @@ describe('post-hoc tape extension', () => {
   y: 4
 }
 draw(pt(x, y))`)
-    const { tape, parameterNodes } = result
+    const tape = result.tape!
     const pts = result.drawBuffer.batches.flatMap((b) => b.points)
 
     // Target: (1, 1). Current: (3, 4).
     // L2^2 = (3-1)^2 + (4-1)^2 = 4 + 9 = 13
     const px = pts[0].sourceX as DualValue
     const py = pts[0].sourceY as DualValue
-    const tx = dual(tape!, 1)
-    const ty = dual(tape!, 1)
+    const tx = dual(tape, 1)
+    const ty = dual(tape, 1)
     const dx = px.sub(tx)
     const dy = py.sub(ty)
     const loss = dx.mul(dx).add(dy.mul(dy))
@@ -175,7 +172,7 @@ draw(pt(x, y))`)
     expect(loss.primal).toBe(13)
 
     // d(loss)/dx = 2*(3-1) = 4, d(loss)/dy = 2*(4-1) = 6
-    const grad = computeGradient(tape!, loss.index, parameterNodes!)
+    const grad = computeGradient(tape, loss.index)
     expect(grad.get('x')).toBe(4)
     expect(grad.get('y')).toBe(6)
   })
@@ -183,20 +180,20 @@ draw(pt(x, y))`)
   it('can compute gradients for multiple outputs via reset', () => {
     const result = runDual(`parameters { x: 3 }
 draw(pt(x * x, x + 1))`)
-    const { tape, parameterNodes } = result
+    const tape = result.tape!
     const pts = result.drawBuffer.batches.flatMap((b) => b.points)
     const sx = pts[0].sourceX as DualValue
     const sy = pts[0].sourceY as DualValue
 
     // d(x*x)/dx = 6
-    tape!.reset()
-    tape!.backward(sx.index)
-    expect(tape!.adjoint(parameterNodes!.get('x')!)).toBe(6)
+    tape.reset()
+    tape.backward(sx.index)
+    expect(tape.adjoint(tape.paramIndices.get('x')!)).toBe(6)
 
     // d(x+1)/dx = 1
-    tape!.reset()
-    tape!.backward(sy.index)
-    expect(tape!.adjoint(parameterNodes!.get('x')!)).toBe(1)
+    tape.reset()
+    tape.backward(sy.index)
+    expect(tape.adjoint(tape.paramIndices.get('x')!)).toBe(1)
   })
 })
 
@@ -244,18 +241,18 @@ describe('extractSubTape optimization through interpreter', () => {
   y: 0
 }
 draw(pt(x, y))`)
-    const { tape, parameterNodes } = result
+    const tape = result.tape!
     const pts = result.drawBuffer.batches.flatMap((b) => b.points)
 
     // Build loss: L2^2 to target (3, 4)
     const px = pts[0].sourceX as DualValue
     const py = pts[0].sourceY as DualValue
-    const dx = px.sub(dual(tape!, 3))
-    const dy = py.sub(dual(tape!, 4))
+    const dx = px.sub(dual(tape, 3))
+    const dy = py.sub(dual(tape, 4))
     const loss = dx.mul(dx).add(dy.mul(dy))
 
     // Extract sub-tape and optimize
-    const sub = extractSubTape(tape!, loss.index, parameterNodes!)
+    const sub = extractSubTape(tape, loss.index)
     const lr = 0.1
     const p = new Map([['x', 0], ['y', 0]])
 
@@ -276,15 +273,15 @@ b = x + 1
 c = x - 1
 d = a + b + c
 draw(pt(a, d))`)
-    const { tape, parameterNodes } = result
+    const tape = result.tape!
     const pts = result.drawBuffer.batches.flatMap((b) => b.points)
 
     // Loss only depends on pt.x = x*x
     const px = pts[0].sourceX as DualValue
-    const target = dual(tape!, 10)
-    const loss = px.sub(target).pow(dual(tape!, 2))
+    const target = dual(tape, 10)
+    const loss = px.sub(target).pow(dual(tape, 2))
 
-    const sub = extractSubTape(tape!, loss.index, parameterNodes!)
+    const sub = extractSubTape(tape, loss.index)
     // Sub-tape should be much smaller than the full tape
     // Full tape has nodes for a, b, c, d, draw args, loss, etc.
     // Sub-tape only has: x, x*x, 10, 2, (x*x-10), (x*x-10)^2
@@ -299,7 +296,7 @@ draw(pt(a, d))`)
   it('optimize rect width to match target area', () => {
     const result = runDual(`parameters { w: 1 }
 draw(rect(0, 0, w, w))`)
-    const { tape, parameterNodes } = result
+    const tape = result.tape!
 
     // Target area = 25 → w should converge to 5
     // Area = w*w (from rect width * height, both are w)
@@ -308,10 +305,10 @@ draw(rect(0, 0, w, w))`)
     // Bottom-right point x coord = w
     const wVal = edges[0].sourceEnd!.x as unknown as DualValue
     const area = wVal.mul(wVal) // w * w since rect is square
-    const targetArea = dual(tape!, 25)
-    const loss = area.sub(targetArea).pow(dual(tape!, 2))
+    const targetArea = dual(tape, 25)
+    const loss = area.sub(targetArea).pow(dual(tape, 2))
 
-    const sub = extractSubTape(tape!, loss.index, parameterNodes!)
+    const sub = extractSubTape(tape, loss.index)
     const lr = 0.001
     const p = new Map([['w', 1]])
 

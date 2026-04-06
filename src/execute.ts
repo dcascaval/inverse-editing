@@ -44,9 +44,9 @@ function exec(code: string, sync: boolean, mode: ExecutionMode = 'dual') {
       paramValues.set(s.name, s.value)
     }
 
-    const { drawBuffer, error, tape, parameterNodes } = executeProgram(program, paramValues, mode)
+    const { drawBuffer, error, tape } = executeProgram(program, paramValues, mode)
     store.setScene(drawBuffer.batches)
-    store.setTape(tape, parameterNodes)
+    store.setTape(tape)
 
     if (error) {
       store.setError(error.message)
@@ -57,7 +57,7 @@ function exec(code: string, sync: boolean, mode: ExecutionMode = 'dual') {
     const err = e instanceof Error ? e : new Error(String(e))
     store.setError(err.message)
     store.setScene([])
-    store.setTape(null, null)
+    store.setTape(null)
   }
 }
 

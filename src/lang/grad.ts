@@ -92,12 +92,11 @@ export function dual(tape: Tape, value: number): DualValue {
 export function computeGradient(
   tape: Tape,
   outputIndex: number,
-  parameterNodes: Map<string, number>,
 ): Map<string, number> {
   tape.reset()
   tape.backward(outputIndex)
   const grad = new Map<string, number>()
-  for (const [name, nodeIndex] of parameterNodes) {
+  for (const [name, nodeIndex] of tape.paramIndices) {
     grad.set(name, tape.adjoint(nodeIndex))
   }
   return grad
@@ -144,8 +143,14 @@ export type TapeNode = {
 export class Tape {
   readonly nodes: TapeNode[] = []
 
-  /** Named parameter node indices. Populated by extractSubTape(). */
+  /** Named parameter node indices. */
   paramIndices: Map<string, number> = new Map()
+
+  pushParam(name: string, value: number): number {
+    const idx = this.pushConst(value)
+    this.paramIndices.set(name, idx)
+    return idx
+  }
 
   pushConst(value: number): number {
     const idx = this.nodes.length
@@ -342,7 +347,6 @@ function backwardPass(nodes: TapeNode[], from: number): void {
 export function extractSubTape(
   tape: Tape,
   outputIndex: number,
-  parameterNodes: Map<string, number>,
 ): Tape {
   const src = tape.nodes
 
@@ -378,7 +382,7 @@ export function extractSubTape(
   }
 
   // 4. Remap parameter indices
-  for (const [name, origIdx] of parameterNodes) {
+  for (const [name, origIdx] of tape.paramIndices) {
     const sub_idx = remap[origIdx]
     if (sub_idx >= 0) sub.paramIndices.set(name, sub_idx)
   }
