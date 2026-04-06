@@ -49,7 +49,7 @@ draw(pt(r, 0))`)
       new Map([['r', 20]]),
     )
     expect(result.error).toBeNull()
-    const pts = result.drawBuffer.batches.flatMap((b) => b.points)
+    const pts = result.drawBuffer.batches.flatMap((b) => b.points).map((p) => ({ x: p.x, y: p.y }))
     expect(pts).toEqual([{ x: 20, y: 0 }])
   })
 

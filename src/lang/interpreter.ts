@@ -1,6 +1,7 @@
 import { type Expression, type Program, show } from '@/lang/ast'
 import {
   type Value,
+  type Point2Val,
   type Point2,
   type Edge2,
   createNumber,
@@ -8,7 +9,9 @@ import {
   asNumeric,
   showValue,
 } from '@/lang/values'
+import type { NumericValue } from '@/lang/numeric'
 import { real } from '@/lang/numeric'
+import { dual, Tape } from '@/lang/grad'
 import { LineageGraph } from '@/lang/lineage'
 import * as Query from '@/lang/query'
 import { getProperty, makeBuiltins } from '@/lang/stdlib'
@@ -29,9 +32,19 @@ export type Polygon2 = {
   holes?: Point2[][]
 }
 
+export type AnnotatedPoint2 = Point2 & {
+  sourceX?: NumericValue
+  sourceY?: NumericValue
+}
+
+export type AnnotatedEdge2 = Edge2 & {
+  sourceStart?: Point2Val
+  sourceEnd?: Point2Val
+}
+
 export type DrawBatch = {
-  points: Point2[]
-  edges: Edge2[]
+  points: AnnotatedPoint2[]
+  edges: AnnotatedEdge2[]
   polygons: Polygon2[]
   style: DrawStyle
 }
@@ -91,10 +104,10 @@ class Context {
 // Evaluate
 
 
-function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGraph): Value {
+function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGraph, tape: Tape | null): Value {
   switch (expr.type) {
     case 'Literal':
-      return createNumber(real(expr.value))
+      return createNumber(tape ? dual(tape, expr.value) : real(expr.value))
 
     case 'Variable': {
       const v = ctx.lookup(expr.name)
@@ -103,14 +116,14 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
     }
 
     case 'Assignment': {
-      const val = evaluate(expr.expression, ctx, buf, g)
+      const val = evaluate(expr.expression, ctx, buf, g, tape)
       ctx.assign(expr.target, val)
       return val
     }
 
     case 'BinOp': {
-      const lhs = evaluate(expr.lhs, ctx, buf, g)
-      const rhs = evaluate(expr.rhs, ctx, buf, g)
+      const lhs = evaluate(expr.lhs, ctx, buf, g, tape)
+      const rhs = evaluate(expr.rhs, ctx, buf, g, tape)
 
       if (expr.op === 'and') {
         if (lhs.type !== 'query' || rhs.type !== 'query')
@@ -137,7 +150,7 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
     }
 
     case 'UnaryOp': {
-      const arg = evaluate(expr.argument, ctx, buf, g)
+      const arg = evaluate(expr.argument, ctx, buf, g, tape)
       if (expr.op === 'not') {
         if (arg.type !== 'query')
           throw new Error(`'not' requires a query operand, got ${arg.type}`)
@@ -150,13 +163,13 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
     }
 
     case 'PropertyAccess': {
-      const obj = evaluate(expr.object, ctx, buf, g)
+      const obj = evaluate(expr.object, ctx, buf, g, tape)
       return getProperty(obj, expr.property, g)
     }
 
     case 'Apply': {
-      const callee = evaluate(expr.callee, ctx, buf, g)
-      const args = expr.args.map((a) => evaluate(a, ctx, buf, g))
+      const callee = evaluate(expr.callee, ctx, buf, g, tape)
+      const args = expr.args.map((a) => evaluate(a, ctx, buf, g, tape))
 
       if (callee.type === 'builtin') return callee.fn(args)
 
@@ -166,7 +179,7 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
           for (let i = 0; i < callee.params.length; i++) {
             ctx.assign(callee.params[i], args[i] ?? createNull())
           }
-          return evaluate(callee.body, ctx, buf, g)
+          return evaluate(callee.body, ctx, buf, g, tape)
         } finally {
           ctx.pop()
         }
@@ -179,7 +192,7 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
             ctx.assign(callee.params[i], args[i] ?? createNull())
           }
           for (const stmt of callee.body) {
-            evaluate(stmt, ctx, buf, g)
+            evaluate(stmt, ctx, buf, g, tape)
           }
           return { type: 'scope', bindings: ctx.topScope() }
         } finally {
@@ -200,7 +213,7 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
     case 'Block': {
       let result: Value = createNull()
       for (const stmt of expr.statements) {
-        result = evaluate(stmt, ctx, buf, g)
+        result = evaluate(stmt, ctx, buf, g, tape)
       }
       return result
     }
@@ -222,33 +235,47 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
 // Execute
 
 
+export type ExecutionMode = 'real' | 'dual'
+
 export type ExecutionResult = {
   drawBuffer: DrawBuffer
   lineage: LineageGraph
   error: Error | null
+  tape: Tape | null
+  parameterNodes: Map<string, number> | null
 }
 
 export function executeProgram(
   program: Program,
   parameterValues?: Map<string, number>,
+  mode: ExecutionMode = 'real',
 ): ExecutionResult {
   const buf: DrawBuffer = { batches: [] }
   const g = new LineageGraph()
   const builtins = makeBuiltins(buf, g)
   const ctx = new Context(builtins)
 
+  const tape = mode === 'dual' ? new Tape() : null
+  const parameterNodes = tape ? new Map<string, number>() : null
+
   // Inject parameter values
   if (program.parameters) {
     for (const p of program.parameters.parameters) {
       const val = parameterValues?.get(p.name) ?? p.bounds.mid
-      ctx.assign(p.name, createNumber(val))
+      if (tape && parameterNodes) {
+        const dv = dual(tape, val)
+        parameterNodes.set(p.name, dv.index)
+        ctx.assign(p.name, createNumber(dv))
+      } else {
+        ctx.assign(p.name, createNumber(val))
+      }
     }
   }
 
   let error: Error | null = null
   for (const stmt of program.statements) {
     try {
-      evaluate(stmt, ctx, buf, g)
+      evaluate(stmt, ctx, buf, g, tape)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       error = new Error(`${msg}\n  in: ${show(stmt)}`)
@@ -256,5 +283,5 @@ export function executeProgram(
     }
   }
 
-  return { drawBuffer: buf, lineage: g, error }
+  return { drawBuffer: buf, lineage: g, error, tape, parameterNodes }
 }

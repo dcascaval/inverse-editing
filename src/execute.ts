@@ -2,7 +2,7 @@ import { useStore } from '@/store'
 import type { Slider } from '@/store'
 import type { Program } from '@/lang/ast'
 import { parse } from '@/lang/parser'
-import { executeProgram } from '@/lang/interpreter'
+import { type ExecutionMode, executeProgram } from '@/lang/interpreter'
 
 /** Nearest power of 10 strictly greater than |value|, minimum 10 */
 function upperBound(value: number): number {
@@ -32,7 +32,7 @@ export function syncSliders(program: Program) {
   useStore.getState().setSliders(sliders)
 }
 
-function exec(code: string, sync: boolean) {
+function exec(code: string, sync: boolean, mode: ExecutionMode = 'dual') {
   const store = useStore.getState()
 
   try {
@@ -44,8 +44,9 @@ function exec(code: string, sync: boolean) {
       paramValues.set(s.name, s.value)
     }
 
-    const { drawBuffer, error } = executeProgram(program, paramValues)
+    const { drawBuffer, error, tape, parameterNodes } = executeProgram(program, paramValues, mode)
     store.setScene(drawBuffer.batches)
+    store.setTape(tape, parameterNodes)
 
     if (error) {
       store.setError(error.message)
@@ -56,6 +57,7 @@ function exec(code: string, sync: boolean) {
     const err = e instanceof Error ? e : new Error(String(e))
     store.setError(err.message)
     store.setScene([])
+    store.setTape(null, null)
   }
 }
 

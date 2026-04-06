@@ -1,7 +1,6 @@
 import {
   type Value,
-  type Point2,
-  type Edge2,
+  type Point2Val,
   type StyleVal,
   createNumber,
   createNull,
@@ -13,6 +12,7 @@ import {
   showValue,
 } from '@/lang/values'
 import type { NumericValue } from '@/lang/numeric'
+import type { AnnotatedPoint2, AnnotatedEdge2 } from '@/lang/interpreter'
 import { overloaded, signature, Num, Pt2, Rct, Pgn } from '@/lang/overload'
 import {
   transformValue,
@@ -32,12 +32,15 @@ import { distributeHoles } from '@/geometry/polygon'
 
 // Draw helpers
 
-function pt2(p: { x: NumericValue; y: NumericValue }): Point2 {
-  return { x: p.x.toNumber(), y: p.y.toNumber() }
+function pt2(p: { x: NumericValue; y: NumericValue }): AnnotatedPoint2 {
+  return { x: p.x.toNumber(), y: p.y.toNumber(), sourceX: p.x, sourceY: p.y }
 }
 
-function edge2(e: { start: { x: NumericValue; y: NumericValue }; end: { x: NumericValue; y: NumericValue } }): Edge2 {
-  return { start: pt2(e.start), end: pt2(e.end) }
+function edge2(e: { start: Point2Val; end: Point2Val }): AnnotatedEdge2 {
+  return {
+    start: pt2(e.start), end: pt2(e.end),
+    sourceStart: e.start, sourceEnd: e.end,
+  }
 }
 
 function collectDrawable(v: Value, batch: DrawBatch) {

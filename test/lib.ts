@@ -14,14 +14,18 @@ export function runOk(src: string) {
   return result
 }
 
-/** Flatten all batches into a single points/edges list for simple assertions */
+/** Flatten all batches into a single points/edges list for simple assertions.
+ *  Strips source annotations so toEqual checks work against plain {x, y}. */
 export function drawn(src: string) {
   const { drawBuffer } = run(src)
   const points: Point2[] = []
   const edges: Edge2[] = []
   for (const b of drawBuffer.batches) {
-    points.push(...b.points)
-    edges.push(...b.edges)
+    for (const p of b.points) points.push({ x: p.x, y: p.y })
+    for (const e of b.edges) edges.push({
+      start: { x: e.start.x, y: e.start.y },
+      end: { x: e.end.x, y: e.end.y },
+    })
   }
   return { points, edges, batches: drawBuffer.batches }
 }
