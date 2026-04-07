@@ -1,4 +1,5 @@
 import { type Expression, type Program, show } from '@/lang/ast'
+import { Matrix4 } from 'three'
 import {
   type Value,
   type Point2Val,
@@ -33,19 +34,35 @@ export type Polygon2 = {
 }
 
 export type AnnotatedPoint2 = Point2 & {
+  z?: number
   sourceX?: NumericValue
   sourceY?: NumericValue
 }
 
-export type AnnotatedEdge2 = Edge2 & {
+export type AnnotatedEdge2 = {
+  start: { x: number; y: number; z?: number }
+  end: { x: number; y: number; z?: number }
   sourceStart?: Point2Val
   sourceEnd?: Point2Val
+}
+
+export type Point3 = { x: number; y: number; z: number }
+
+/** A quad in 3D: 4 corners, rendered as 2 triangles. */
+export type Quad3 = [Point3, Point3, Point3, Point3]
+
+/** A planar 3D face: 2D polygon (with holes) + Matrix4 placement. */
+export type PlanarFaceDraw = {
+  polygon: Polygon2
+  matrix: Matrix4
 }
 
 export type DrawBatch = {
   points: AnnotatedPoint2[]
   edges: AnnotatedEdge2[]
   polygons: Polygon2[]
+  quads3: Quad3[]
+  planarFaces3: PlanarFaceDraw[]
   style: DrawStyle
 }
 

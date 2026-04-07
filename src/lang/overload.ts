@@ -7,6 +7,12 @@ import type {
   RectangleVal,
   PolygonVal,
   RegionVal,
+  Point3Val,
+  Edge3Val,
+  Polygon3Val,
+  PlanarFace3Val,
+  Face3Val,
+  ExtrusionVal,
   ArrayVal,
   BuiltinFnVal,
 } from '@/lang/values'
@@ -31,6 +37,12 @@ export const Edg: TypeTag<Edge2Val> = tag('edge2', 'edge2')
 export const Rct: TypeTag<RectangleVal> = tag('rectangle', 'rectangle')
 export const Pgn: TypeTag<PolygonVal> = tag('polygon', 'polygon')
 export const Rgn: TypeTag<RegionVal> = tag('region', 'region')
+export const Pt3: TypeTag<Point3Val> = tag('point3', 'point3')
+export const Edg3: TypeTag<Edge3Val> = tag('edge3', 'edge3')
+export const Pgn3: TypeTag<Polygon3Val> = tag('polygon3', 'polygon3')
+export const PlFce3: TypeTag<PlanarFace3Val> = tag('planarface3', 'planarface3')
+export const Fce3: TypeTag<Face3Val> = tag('face3', 'face3')
+export const Ext: TypeTag<ExtrusionVal> = tag('extrusion', 'extrusion')
 export const Arr: TypeTag<ArrayVal> = tag('array', 'array')
 export const Any: TypeTag<Value> = { label: 'any', match: (_v): _v is Value => true }
 

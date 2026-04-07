@@ -45,6 +45,10 @@ type Store = {
   // Error (not persisted)
   error: string | null
   setError: (error: string | null) => void
+
+  // Camera mode (not persisted)
+  cameraMode: '2d' | '3d'
+  setCameraMode: (mode: '2d' | '3d') => void
 }
 
 const DEFAULT_CODE = 'parameters {\n}\n'
@@ -113,6 +117,9 @@ export const useStore = create<Store>()(
 
       error: null,
       setError: (error) => set({ error }),
+
+      cameraMode: '2d',
+      setCameraMode: (cameraMode) => set({ cameraMode }),
     }),
     {
       name: 'qsynth-store',

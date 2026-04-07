@@ -1,4 +1,4 @@
-import { Matrix3, Vector3 } from 'three'
+import { Matrix3, Matrix4, Vector3, Vector4 } from 'three'
 import {
   type Value,
   type Point2,
@@ -7,10 +7,18 @@ import {
   type RectangleVal,
   type PolygonVal,
   type RegionVal,
+  type Point3Val,
+  type Edge3Val,
+  type Polygon3Val,
+  type PlanarFace3Val,
+  type Face3Val,
+  type ExtrusionVal,
   createPoint,
   createEdge,
   createRectangle,
   createPolygon,
+  createPoint3,
+  createEdge3,
 } from '@/lang/values'
 import type { LineageGraph } from '@/lang/lineage'
 
@@ -136,5 +144,136 @@ export function transformValue(m: Matrix3, v: Value, g: LineageGraph): Value {
     case 'polygon': return transformPolygon(m, v, g)
     case 'region': return transformRegion(m, v, g)
     default: throw new Error(`Cannot transform ${v.type}`)
+  }
+}
+
+
+// ── 3D Transform Matrices (Matrix4) ──
+
+
+export type { Matrix4 }
+
+export function translationMatrix3D(tx: number, ty: number, tz: number): Matrix4 {
+  return new Matrix4().makeTranslation(tx, ty, tz)
+}
+
+export function rotateXMatrix(degrees: number): Matrix4 {
+  return new Matrix4().makeRotationX(degrees * Math.PI / 180)
+}
+
+export function rotateYMatrix(degrees: number): Matrix4 {
+  return new Matrix4().makeRotationY(degrees * Math.PI / 180)
+}
+
+export function rotateZMatrix3D(degrees: number): Matrix4 {
+  return new Matrix4().makeRotationZ(degrees * Math.PI / 180)
+}
+
+export function scaleMatrix3D(f: number): Matrix4 {
+  return new Matrix4().makeScale(f, f, f)
+}
+
+export function rotateAxisMatrix3D(
+  origin: { x: number; y: number; z: number },
+  dir: { x: number; y: number; z: number },
+  degrees: number,
+): Matrix4 {
+  const axis = new Vector3(dir.x - origin.x, dir.y - origin.y, dir.z - origin.z).normalize()
+  const rot = new Matrix4().makeRotationAxis(axis, degrees * Math.PI / 180)
+  if (origin.x === 0 && origin.y === 0 && origin.z === 0) return rot
+  const pre = new Matrix4().makeTranslation(-origin.x, -origin.y, -origin.z)
+  const post = new Matrix4().makeTranslation(origin.x, origin.y, origin.z)
+  return post.multiply(rot).multiply(pre)
+}
+
+
+// ── 3D Transform application ──
+
+
+const _v4 = new Vector4()
+
+function applyToPoint3D(m: Matrix4, p: Point3Val): { x: number; y: number; z: number } {
+  _v4.set(p.x.toNumber(), p.y.toNumber(), p.z.toNumber(), 1).applyMatrix4(m)
+  return { x: _v4.x, y: _v4.y, z: _v4.z }
+}
+
+/** Apply only the rotational part of a Matrix4 (upper-left 3×3) to a vector. */
+function rotateVector3D(m: Matrix4, v: Vector3): Vector3 {
+  const e = m.elements // column-major
+  return new Vector3(
+    e[0] * v.x + e[4] * v.y + e[8] * v.z,
+    e[1] * v.x + e[5] * v.y + e[9] * v.z,
+    e[2] * v.x + e[6] * v.y + e[10] * v.z,
+  )
+}
+
+function transformPt3(m: Matrix4, p: Point3Val, g: LineageGraph): Point3Val {
+  const tp = applyToPoint3D(m, p)
+  const result = createPoint3(tp.x, tp.y, tp.z)
+  g.direct(p, result)
+  return result
+}
+
+function transformEdge3D(m: Matrix4, e: Edge3Val, g: LineageGraph): Edge3Val {
+  const start = transformPt3(m, e.start, g)
+  const end = transformPt3(m, e.end, g)
+  const result = createEdge3(start, end, g)
+  g.direct(e, result)
+  return result
+}
+
+function transformPolygon3D(m: Matrix4, p: Polygon3Val, g: LineageGraph): Polygon3Val {
+  const pts = p.points.map((pt) => transformPt3(m, pt, g))
+  const edges = p.edges.map((e) => transformEdge3D(m, e, g))
+  for (let i = 0; i < p.edges.length; i++) g.direct(p.edges[i], edges[i])
+  const result: Polygon3Val = { type: 'polygon3', points: pts, edges }
+  g.direct(p, result)
+  return result
+}
+
+function transformPlanarFace3D(m: Matrix4, f: PlanarFace3Val, g: LineageGraph): PlanarFace3Val {
+  const positive = f.positive.map((p) => transformPolygon3D(m, p, g))
+  const negative = f.negative.map((p) => transformPolygon3D(m, p, g))
+  const result: PlanarFace3Val = { type: 'planarface3', positive, negative }
+  g.direct(f, result)
+  return result
+}
+
+function transformFace3D(m: Matrix4, f: Face3Val, g: LineageGraph): Face3Val {
+  const bottomEdge = transformEdge3D(m, f.bottomEdge, g)
+  const extrusion = rotateVector3D(m, f.extrusion)
+  const result: Face3Val = { type: 'face3', bottomEdge, extrusion }
+  g.direct(f, result)
+  return result
+}
+
+function transformExtrusion(m: Matrix4, ext: ExtrusionVal, g: LineageGraph): ExtrusionVal {
+  const bottomEdges = ext.bottomEdges.map((e) => transformEdge3D(m, e, g))
+  const topEdges = ext.topEdges.map((e) => transformEdge3D(m, e, g))
+  const verticalEdges = ext.verticalEdges.map((e) => transformEdge3D(m, e, g))
+  const verticalFaces = ext.verticalFaces.map((f) => transformFace3D(m, f, g))
+  const bottomFace = transformPlanarFace3D(m, ext.bottomFace, g)
+  const topFace = transformPlanarFace3D(m, ext.topFace, g)
+  const result: ExtrusionVal = {
+    type: 'extrusion',
+    sourceRegion: ext.sourceRegion,
+    extrusionVec: rotateVector3D(m, ext.extrusionVec),
+    placement: new Matrix4().copy(m).multiply(ext.placement),
+    bottomEdges, topEdges, verticalEdges, verticalFaces,
+    bottomFace, topFace,
+  }
+  g.direct(ext, result)
+  return result
+}
+
+export function transformValue3D(m: Matrix4, v: Value, g: LineageGraph): Value {
+  switch (v.type) {
+    case 'point3': return transformPt3(m, v, g)
+    case 'edge3': return transformEdge3D(m, v, g)
+    case 'polygon3': return transformPolygon3D(m, v, g)
+    case 'planarface3': return transformPlanarFace3D(m, v, g)
+    case 'face3': return transformFace3D(m, v, g)
+    case 'extrusion': return transformExtrusion(m, v, g)
+    default: throw new Error(`Cannot 3D-transform ${v.type}`)
   }
 }

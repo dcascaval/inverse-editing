@@ -3,6 +3,7 @@ import type { LineageGraph } from '@/lang/lineage'
 import { type Query, showQuery } from '@/lang/query'
 import { type NumericValue, real } from '@/lang/numeric'
 import { DualValue, type Tape } from '@/lang/grad'
+import { Matrix4, Vector3 } from 'three'
 
 
 // Geometric primitives (plain data, used by store + renderer)
@@ -77,6 +78,54 @@ export type RegionVal = {
   negative: PolygonVal[]
 }
 
+export type Point3Val = {
+  type: 'point3'
+  x: NumericValue
+  y: NumericValue
+  z: NumericValue
+}
+
+export type Edge3Val = {
+  type: 'edge3'
+  start: Point3Val
+  end: Point3Val
+}
+
+export type Polygon3Val = {
+  type: 'polygon3'
+  points: Point3Val[]
+  edges: Edge3Val[]
+}
+
+/** Planar face (top or bottom of extrusion). Mirrors RegionVal structure for holes. */
+export type PlanarFace3Val = {
+  type: 'planarface3'
+  positive: Polygon3Val[]
+  negative: Polygon3Val[]
+}
+
+/** Analytical vertical face of an extrusion: bottom edge + extrusion vector. */
+export type Face3Val = {
+  type: 'face3'
+  bottomEdge: Edge3Val
+  extrusion: Vector3
+}
+
+export type ExtrusionVal = {
+  type: 'extrusion'
+  // Analytical representation (for rendering)
+  sourceRegion: RegionVal
+  extrusionVec: Vector3
+  placement: Matrix4
+  // Derived 3D geometry (for lineage & queries)
+  bottomEdges: Edge3Val[]
+  topEdges: Edge3Val[]
+  verticalEdges: Edge3Val[]
+  verticalFaces: Face3Val[]
+  bottomFace: PlanarFace3Val
+  topFace: PlanarFace3Val
+}
+
 export type ArrayVal = {
   type: 'array'
   elements: Value[]
@@ -120,6 +169,12 @@ type RawValue =
   | RectangleVal
   | PolygonVal
   | RegionVal
+  | Point3Val
+  | Edge3Val
+  | Polygon3Val
+  | PlanarFace3Val
+  | Face3Val
+  | ExtrusionVal
   | ArrayVal
   | LambdaVal
   | OperationVal
@@ -189,6 +244,15 @@ export function createPolygon(points: Point2Val[], g: LineageGraph): PolygonVal 
   return { type: 'polygon', points, edges }
 }
 
+export const createPoint3 = (x: NumericValue | number, y: NumericValue | number, z: NumericValue | number): Point3Val =>
+  ({ type: 'point3', x: toNV(x), y: toNV(y), z: toNV(z) })
+
+export function createEdge3(start: Point3Val, end: Point3Val, g: LineageGraph): Edge3Val {
+  const e: Edge3Val = { type: 'edge3', start, end }
+  g.indirect([start, end], e)
+  return e
+}
+
 export function constructRectangle(
   x: NumericValue, y: NumericValue, w: NumericValue, h: NumericValue,
   g: LineageGraph,
@@ -235,6 +299,12 @@ export function showValue(v: Value): string {
     case 'rectangle': return `rect(${v.x.toNumber()}, ${v.y.toNumber()}, ${v.width.toNumber()}, ${v.height.toNumber()})`
     case 'polygon': return `<polygon(${v.points.length} pts)>`
     case 'region': return `<region(${v.positive.length}+, ${v.negative.length}-)>`
+    case 'point3': return `pt3(${v.x.toNumber()}, ${v.y.toNumber()}, ${v.z.toNumber()})`
+    case 'edge3': return `<edge3>`
+    case 'polygon3': return `<polygon3(${v.points.length} pts)>`
+    case 'planarface3': return `<planarface3(${v.positive.length}+, ${v.negative.length}-)>`
+    case 'face3': return `<face3>`
+    case 'extrusion': return `<extrusion(${v.bottomEdges.length} edges)>`
     case 'array': return `[${v.elements.map(showValue).join(', ')}]`
     case 'lambda': return `<lambda(${v.params.join(', ')})>`
     case 'operation': return `<operation ${v.name}(${v.params.join(', ')})>`

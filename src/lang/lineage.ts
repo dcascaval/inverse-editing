@@ -7,6 +7,27 @@ export function containedElements(v: Value): Value[] {
   switch (v.type) {
     case 'edge2':
       return [v, v.start, v.end]
+    case 'edge3':
+      return [v, v.start, v.end]
+    case 'polygon3':
+      return [v, ...v.points, ...v.edges]
+    case 'planarface3': {
+      const all: Value[] = [v]
+      for (const p of [...v.positive, ...v.negative]) all.push(...containedElements(p))
+      return all
+    }
+    case 'face3':
+      return [v, ...containedElements(v.bottomEdge)]
+    case 'extrusion': {
+      const all: Value[] = [v]
+      for (const e of v.bottomEdges) all.push(...containedElements(e))
+      for (const e of v.topEdges) all.push(...containedElements(e))
+      for (const e of v.verticalEdges) all.push(...containedElements(e))
+      for (const f of v.verticalFaces) all.push(...containedElements(f))
+      all.push(...containedElements(v.bottomFace))
+      all.push(...containedElements(v.topFace))
+      return all
+    }
     case 'rectangle':
       return [v, ...v.points, ...v.edges]
     case 'polygon':

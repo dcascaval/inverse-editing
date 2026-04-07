@@ -190,9 +190,9 @@ const nlopt: NLopt = {
 nlopt.ready = (async () => {
   const wasmModule = await loadEmscriptenModule()
 
-  const classes = new Set(['Optimize'])
-  nlopt.Optimize = GC.initClass(classes, wasmModule.Optimize)
-  nlopt.Algorithm = wasmModule.Algorithm
+  const classes = new Set(['Optimize']);
+  nlopt.Optimize = GC.initClass(classes, wasmModule.Optimize);
+  nlopt.Algorithm = wasmModule.Algorithm;
   
   (nlopt as any).HEAPF64 = wasmModule.HEAPF64
   addHelpers(wasmModule, nlopt)
