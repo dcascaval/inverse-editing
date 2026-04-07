@@ -40,9 +40,59 @@ struct Segment {
   _sp0: f32, _sp1: f32, _sp2: f32,
 }
 
+struct TriHitInfo {
+  t: f32,
+  normal: vec3<f32>,
+  backface: bool,
+}
+
 struct Hit {
   t: f32,
   color: vec4<f32>,
+}
+
+const LIGHT_DIR: vec3<f32> = vec3<f32>(-0.5773502691896258, 0.5773502691896258, 0.5773502691896258); // normalize(1,1,1)
+const AMBIENT: f32 = 0.65;
+const DIFFUSE: f32 = 0.35;
+
+fn rgb2hsl(c: vec3<f32>) -> vec3<f32> {
+  let cmax = max(c.r, max(c.g, c.b));
+  let cmin = min(c.r, min(c.g, c.b));
+  let d = cmax - cmin;
+  let l = (cmax + cmin) * 0.5;
+  if (d < 1e-6) {
+    return vec3<f32>(0.0, 0.0, l);
+  }
+  let s = d / (1.0 - abs(2.0 * l - 1.0));
+  var h: f32;
+  if (cmax == c.r) {
+    h = ((c.g - c.b) / d) % 6.0;
+  } else if (cmax == c.g) {
+    h = (c.b - c.r) / d + 2.0;
+  } else {
+    h = (c.r - c.g) / d + 4.0;
+  }
+  h = h / 6.0;
+  if (h < 0.0) { h += 1.0; }
+  return vec3<f32>(h, s, l);
+}
+
+fn hsl2rgb(hsl: vec3<f32>) -> vec3<f32> {
+  let h = hsl.x;
+  let s = hsl.y;
+  let l = hsl.z;
+  let c = (1.0 - abs(2.0 * l - 1.0)) * s;
+  let hp = h * 6.0;
+  let x = c * (1.0 - abs(hp % 2.0 - 1.0));
+  var rgb: vec3<f32>;
+  if (hp < 1.0) { rgb = vec3<f32>(c, x, 0.0); }
+  else if (hp < 2.0) { rgb = vec3<f32>(x, c, 0.0); }
+  else if (hp < 3.0) { rgb = vec3<f32>(0.0, c, x); }
+  else if (hp < 4.0) { rgb = vec3<f32>(0.0, x, c); }
+  else if (hp < 5.0) { rgb = vec3<f32>(x, 0.0, c); }
+  else { rgb = vec3<f32>(c, 0.0, x); }
+  let m = l - c * 0.5;
+  return rgb + vec3<f32>(m, m, m);
 }
 
 @group(0) @binding(0) var<uniform> camera: Camera;
@@ -85,22 +135,26 @@ fn rayAABB(origin: vec3<f32>, invDir: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32
   return tmax >= max(tmin, 0.0);
 }
 
-fn rayTriangle(origin: vec3<f32>, dir: vec3<f32>, tri: Triangle) -> f32 {
+fn rayTriangle(origin: vec3<f32>, dir: vec3<f32>, tri: Triangle) -> TriHitInfo {
+  let miss = TriHitInfo(-1.0, vec3<f32>(0.0), false);
   let e1 = tri.v1 - tri.v0;
   let e2 = tri.v2 - tri.v0;
   let h = cross(dir, e2);
   let a = dot(e1, h);
-  if (abs(a) < 1e-7) { return -1.0; }
+  if (abs(a) < 1e-7) { return miss; }
   let f = 1.0 / a;
   let s = origin - tri.v0;
   let u = f * dot(s, h);
-  if (u < 0.0 || u > 1.0) { return -1.0; }
+  if (u < 0.0 || u > 1.0) { return miss; }
   let q = cross(s, e1);
   let v = f * dot(dir, q);
-  if (v < 0.0 || u + v > 1.0) { return -1.0; }
+  if (v < 0.0 || u + v > 1.0) { return miss; }
   let t = f * dot(e2, q);
-  if (t < 1e-4) { return -1.0; }
-  return t;
+  if (t < 1e-4) { return miss; }
+  var n = normalize(cross(e1, e2));
+  let is_backface = dot(n, dir) > 0.0;
+  if (is_backface) { n = -n; }
+  return TriHitInfo(t, n, is_backface);
 }
 
 fn raySegment(origin: vec3<f32>, dir: vec3<f32>, seg: Segment) -> f32 {
@@ -208,9 +262,18 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         // Triangles
         for (var i = 0u; i < count; i++) {
           let ti = triIndices[start + i];
-          let t = rayTriangle(origin, dir, triangles[ti]);
-          if (t > 0.0) {
-            insertHit(&hits, &hitCount, t, triangles[ti].color);
+          let info = rayTriangle(origin, dir, triangles[ti]);
+          if (info.t > 0.0) {
+            let baseColor = triangles[ti].color;
+            // Shade by adjusting lightness in HSL, preserving hue/saturation
+            let ndotl = max(dot(info.normal, LIGHT_DIR), 0.0);
+            let shade = AMBIENT + DIFFUSE * ndotl;
+            var hsl = rgb2hsl(baseColor.rgb);
+            hsl.z = hsl.z * shade;
+            var alpha = baseColor.a;
+            if (info.backface) { alpha *= 1.5; }
+            let litColor = vec4<f32>(hsl2rgb(hsl), alpha);
+            insertHit(&hits, &hitCount, info.t, litColor);
           }
         }
       } else {
