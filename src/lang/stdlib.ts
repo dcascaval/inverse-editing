@@ -23,7 +23,6 @@ import {
   showValue,
 } from '@/lang/values'
 import type { NumericValue } from '@/lang/numeric'
-import { real } from '@/lang/numeric'
 import type { AnnotatedPoint2, AnnotatedEdge2 } from '@/lang/interpreter'
 import { overloaded, signature, Num, Pt2, Rct, Pgn, Rgn, Ext } from '@/lang/overload'
 import {
@@ -488,7 +487,7 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
     return { type: 'style', stroke: asString(args[0], 'stroke') } satisfies StyleVal
   })
 
-  scope.set('translucent', overloaded('translucent', [
+  scope.set('opacity', overloaded('opacity', [
     signature([Num], (n): StyleVal => ({ type: 'style', opacity: n.value.toNumber() })),
   ]))
 

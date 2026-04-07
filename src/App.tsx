@@ -1,4 +1,4 @@
-import { Viewport } from '@/components/Viewport'
+import { Viewport } from '@/render/Viewport'
 import { Editor } from '@/components/Editor'
 import { SliderPanel } from '@/components/SliderPanel'
 import { ProgramBar } from '@/components/ProgramBar'

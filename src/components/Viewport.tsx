@@ -42,7 +42,7 @@ function BatchFaces3({ batch }: { batch: DrawBatch }) {
   if (!quadGeo && planarMeshes.length === 0) return null
 
   const fill = style.fill ?? '#e4e4e7'
-  const opacity = (style.opacity ?? 1) * 0.35;
+  const opacity = (style.opacity ?? 1) * 0.7;
 
   return (
     <>
