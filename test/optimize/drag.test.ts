@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { parse } from '@/lang/parser'
 import { executeProgram } from '@/lang/interpreter'
-import type { AnnotatedEdge2 } from '@/lang/interpreter'
-import { DualValue, dual, extractSubTape } from '@/lang/grad'
 import { findClosestEdge, buildDragSession, optimizeDrag } from '@/optimize/drag'
 import { useStore } from '@/store'
 import nlopt from '@/vendor/nlopt'
@@ -64,7 +62,7 @@ describe('buildDragSession', () => {
     const edges = result.drawBuffer.batches.flatMap((b) => b.edges)
 
     const hit = findClosestEdge(edges, 2.5, 0)!
-    const session = buildDragSession(result.tape!, hit.edge, hit.t, 2.5, 0, 0.1)
+    const session = buildDragSession(result.tape!, hit.edge, hit.t, 2.5, 0)
 
     expect(session.subTape).toBeDefined()
     expect(session.paramNames).toContain('x')
@@ -92,8 +90,8 @@ describe('optimizeDrag', () => {
     const hit = findClosestEdge(edges, 10, 0)!
     expect(hit.t).toBeCloseTo(1, 1)
 
-    const session = buildDragSession(result.tape!, hit.edge, hit.t, 10, 0, 0.01)
-    const pt = await optimizeDrag(session, 15, 0)
+    const session = buildDragSession(result.tape!, hit.edge, hit.t, 10, 0)
+    await optimizeDrag(session, 15, 0)
 
     // w should have moved toward 15
     const newW = useStore.getState().sliders.find((s) => s.name === 'w')!.value

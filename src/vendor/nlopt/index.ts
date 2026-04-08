@@ -159,7 +159,7 @@ async function loadEmscriptenModule(): Promise<any> {
 
   if (typeof window !== 'undefined') {
     // Browser: Vite can't dynamic-import .cjs; use the .js copy instead
-    const mod = await import('./nlopt_gen.js')
+    const mod = await import('./nlopt_gen.js' as any)
     const factory = mod.default ?? mod
     const wasmUrl = new URL('./nlopt_gen.wasm', import.meta.url).href
     const wasmResp = await fetch(wasmUrl)
