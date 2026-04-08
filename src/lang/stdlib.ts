@@ -21,9 +21,11 @@ import {
   asNumeric,
   asString,
   showValue,
+  nv,
 } from '@/lang/values'
 import type { NumericValue } from '@/lang/numeric'
 import { real } from '@/lang/numeric'
+import type { Tape } from '@/lang/grad'
 import type { AnnotatedPoint2, AnnotatedEdge2 } from '@/lang/interpreter'
 import { overloaded, signature, Num, Pt2, Rct, Pgn, Rgn, Ext } from '@/lang/overload'
 import {
@@ -171,7 +173,8 @@ function is3D(v: Value): boolean {
     || v.type === 'planarface3' || v.type === 'face3' || v.type === 'extrusion'
 }
 
-function makeTransformMethod(obj: Value, name: string, g: LineageGraph): Value {
+function makeTransformMethod(obj: Value, name: string, g: LineageGraph, tape?: Tape | null): Value {
+  const zero = nv(0, tape)
   return {
     type: 'builtin',
     name: `${obj.type}.${name}`,
@@ -180,45 +183,42 @@ function makeTransformMethod(obj: Value, name: string, g: LineageGraph): Value {
 
       switch (name) {
         case 'translateX':
-          if (threeD) return transformValue3D(translationMatrix3D(asNumber(args[0], 'translateX'), 0, 0), obj, g)
-          return transformValue(translationMatrix(asNumber(args[0], 'translateX'), 0), obj, g)
+          if (threeD) return transformValue3D(translationMatrix3D(asNumeric(args[0], 'translateX'), zero, zero, tape), obj, g, tape)
+          return transformValue(translationMatrix(asNumeric(args[0], 'translateX'), zero, tape), obj, g)
         case 'translateY':
-          if (threeD) return transformValue3D(translationMatrix3D(0, asNumber(args[0], 'translateY'), 0), obj, g)
-          return transformValue(translationMatrix(0, asNumber(args[0], 'translateY')), obj, g)
+          if (threeD) return transformValue3D(translationMatrix3D(zero, asNumeric(args[0], 'translateY'), zero, tape), obj, g, tape)
+          return transformValue(translationMatrix(zero, asNumeric(args[0], 'translateY'), tape), obj, g)
         case 'translateZ': {
           if (!threeD) throw new Error('translateZ: only valid on 3D geometry')
-          return transformValue3D(translationMatrix3D(0, 0, asNumber(args[0], 'translateZ')), obj, g)
+          return transformValue3D(translationMatrix3D(zero, zero, asNumeric(args[0], 'translateZ'), tape), obj, g, tape)
         }
         case 'translate': {
-          // Overload: translate(pt, z) → 3D translate by (pt.x, pt.y, z)
           if (args.length >= 2 && args[0].type === 'point2' && args[1].type === 'number') {
             const pt = args[0] as Point2Val
-            const z = asNumber(args[1], 'translate z')
-            if (threeD) return transformValue3D(translationMatrix3D(pt.x.toNumber(), pt.y.toNumber(), z), obj, g)
-            return transformValue(translationMatrix(pt.x.toNumber(), pt.y.toNumber()), obj, g)
+            if (threeD) return transformValue3D(translationMatrix3D(pt.x, pt.y, asNumeric(args[1], 'translate z'), tape), obj, g, tape)
+            return transformValue(translationMatrix(pt.x, pt.y, tape), obj, g)
           }
-          // Overload: translate(x, y)
-          const tx = asNumber(args[0], 'translate x')
-          const ty = asNumber(args[1], 'translate y')
-          if (threeD) return transformValue3D(translationMatrix3D(tx, ty, 0), obj, g)
-          return transformValue(translationMatrix(tx, ty), obj, g)
+          const tx = asNumeric(args[0], 'translate x')
+          const ty = asNumeric(args[1], 'translate y')
+          if (threeD) return transformValue3D(translationMatrix3D(tx, ty, zero, tape), obj, g, tape)
+          return transformValue(translationMatrix(tx, ty, tape), obj, g)
         }
         case 'rotate': {
           if (args.length >= 2 && args[0].type === 'point2') {
             if (threeD) throw new Error('rotate(center, deg): not supported on 3D geometry, use rotateAxis')
-            return transformValue(rotateAroundMatrix(args[0], asNumber(args[1], 'rotate deg')), obj, g)
+            return transformValue(rotateAroundMatrix(args[0], asNumber(args[1], 'rotate deg'), tape), obj, g)
           }
           const deg = asNumber(args[0], 'rotate deg')
-          if (threeD) return transformValue3D(rotateZMatrix3D(deg), obj, g)
-          return transformValue(rotateMatrix(deg), obj, g)
+          if (threeD) return transformValue3D(rotateZMatrix3D(deg), obj, g, tape)
+          return transformValue(rotateMatrix(deg, tape), obj, g)
         }
         case 'rotateX': {
           if (!threeD) throw new Error('rotateX: only valid on 3D geometry')
-          return transformValue3D(rotateXMatrix(asNumber(args[0], 'rotateX deg')), obj, g)
+          return transformValue3D(rotateXMatrix(asNumber(args[0], 'rotateX deg')), obj, g, tape)
         }
         case 'rotateY': {
           if (!threeD) throw new Error('rotateY: only valid on 3D geometry')
-          return transformValue3D(rotateYMatrix(asNumber(args[0], 'rotateY deg')), obj, g)
+          return transformValue3D(rotateYMatrix(asNumber(args[0], 'rotateY deg')), obj, g, tape)
         }
         case 'rotateAxis': {
           if (!threeD) throw new Error('rotateAxis: only valid on 3D geometry')
@@ -226,32 +226,27 @@ function makeTransformMethod(obj: Value, name: string, g: LineageGraph): Value {
             throw new Error('rotateAxis: expected (edge3, degrees)')
           const line = args[0] as Edge3Val
           const deg = asNumber(args[1], 'rotateAxis deg')
-          const s = line.start, e = line.end
           return transformValue3D(
-            rotateAxisMatrix3D(
-              { x: s.x.toNumber(), y: s.y.toNumber(), z: s.z.toNumber() },
-              { x: e.x.toNumber(), y: e.y.toNumber(), z: e.z.toNumber() },
-              deg,
-            ),
-            obj, g,
+            rotateAxisMatrix3D(line.start, line.end, deg),
+            obj, g, tape,
           )
         }
         case 'scale': {
           if (args.length >= 2 && args[0].type === 'point2') {
             if (threeD) throw new Error('scale(center, f): not supported on 3D geometry')
-            return transformValue(scaleAroundMatrix(args[0], asNumber(args[1], 'scale factor')), obj, g)
+            return transformValue(scaleAroundMatrix(args[0], asNumber(args[1], 'scale factor'), tape), obj, g)
           }
           const f = asNumber(args[0], 'scale factor')
-          if (threeD) return transformValue3D(scaleMatrix3D(f), obj, g)
-          return transformValue(scaleMatrix(f), obj, g)
+          if (threeD) return transformValue3D(scaleMatrix3D(f), obj, g, tape)
+          return transformValue(scaleMatrix(f, tape), obj, g)
         }
         case 'mirror': {
           if (threeD) throw new Error('mirror: not yet supported on 3D geometry')
           if (args.length >= 2 && args[0].type === 'point2' && args[1].type === 'point2') {
-            return transformValue(mirrorMatrix(args[0], args[1]), obj, g)
+            return transformValue(mirrorMatrix(args[0], args[1], tape), obj, g)
           }
           if (args.length >= 1 && args[0].type === 'edge2') {
-            return transformValue(mirrorMatrix(args[0].start, args[0].end), obj, g)
+            return transformValue(mirrorMatrix(args[0].start, args[0].end, tape), obj, g)
           }
           throw new Error('mirror: expected (edge) or (point, point)')
         }
@@ -259,10 +254,10 @@ function makeTransformMethod(obj: Value, name: string, g: LineageGraph): Value {
           if (args.length < 2 || args[0].type !== 'point2' || args[1].type !== 'point2')
             throw new Error('move: expected (point, point)')
           const a = args[0] as Point2Val, b = args[1] as Point2Val
-          const dx = b.x.toNumber() - a.x.toNumber()
-          const dy = b.y.toNumber() - a.y.toNumber()
-          if (threeD) return transformValue3D(translationMatrix3D(dx, dy, 0), obj, g)
-          return transformValue(translationMatrix(dx, dy), obj, g)
+          const dx = b.x.sub(a.x)
+          const dy = b.y.sub(a.y)
+          if (threeD) return transformValue3D(translationMatrix3D(dx, dy, zero, tape), obj, g, tape)
+          return transformValue(translationMatrix(dx, dy, tape), obj, g)
         }
         default:
           throw new Error(`Unknown transform method: ${name}`)
@@ -277,9 +272,9 @@ const transformMethods = new Set([
   'scale', 'mirror', 'move',
 ])
 
-export function getProperty(obj: Value, prop: string, g: LineageGraph): Value {
+export function getProperty(obj: Value, prop: string, g: LineageGraph, tape?: Tape | null): Value {
   if (isGeometric(obj) && transformMethods.has(prop)) {
-    return makeTransformMethod(obj, prop, g)
+    return makeTransformMethod(obj, prop, g, tape)
   }
 
   switch (obj.type) {
@@ -291,8 +286,9 @@ export function getProperty(obj: Value, prop: string, g: LineageGraph): Value {
       if (prop === 'start') return obj.start
       if (prop === 'end') return obj.end
       if (prop === 'midpoint') {
-        const mx = (obj.start.x.toNumber() + obj.end.x.toNumber()) / 2
-        const my = (obj.start.y.toNumber() + obj.end.y.toNumber()) / 2
+        const half = createNumber(0.5, tape).value
+        const mx = obj.start.x.add(obj.end.x).mul(half)
+        const my = obj.start.y.add(obj.end.y).mul(half)
         const result = createPoint(mx, my)
         g.indirect([obj.start, obj.end], result)
         return result
@@ -364,9 +360,10 @@ export function getProperty(obj: Value, prop: string, g: LineageGraph): Value {
       if (prop === 'start') return obj.start
       if (prop === 'end') return obj.end
       if (prop === 'midpoint') {
-        const mx = (obj.start.x.toNumber() + obj.end.x.toNumber()) / 2
-        const my = (obj.start.y.toNumber() + obj.end.y.toNumber()) / 2
-        const mz = (obj.start.z.toNumber() + obj.end.z.toNumber()) / 2
+        const half = createNumber(0.5, tape).value
+        const mx = obj.start.x.add(obj.end.x).mul(half)
+        const my = obj.start.y.add(obj.end.y).mul(half)
+        const mz = obj.start.z.add(obj.end.z).mul(half)
         const result = createPoint3(mx, my, mz)
         g.indirect([obj.start, obj.end], result)
         return result
@@ -420,7 +417,7 @@ export function getProperty(obj: Value, prop: string, g: LineageGraph): Value {
 
 type Scope = Map<string, Value>
 
-export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
+export function makeBuiltins(buf: DrawBuffer, g: LineageGraph, tape?: Tape | null): Scope {
   const scope: Scope = new Map()
 
   const register = (name: string, fn: (args: Value[]) => Value, ...aliases: string[]) => {
@@ -586,10 +583,10 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
 
   const boolOp = (op: BooleanOp) =>
     overloaded(op, [
-      signature([Rct, Rct], (a, b) => booleanOperation(a, b, op, g)),
-      signature([Pgn, Pgn], (a, b) => booleanOperation(a, b, op, g)),
-      signature([Rct, Pgn], (a, b) => booleanOperation(a, b, op, g)),
-      signature([Pgn, Rct], (a, b) => booleanOperation(a, b, op, g)),
+      signature([Rct, Rct], (a, b) => booleanOperation(a, b, op, g, tape)),
+      signature([Pgn, Pgn], (a, b) => booleanOperation(a, b, op, g, tape)),
+      signature([Rct, Pgn], (a, b) => booleanOperation(a, b, op, g, tape)),
+      signature([Pgn, Rct], (a, b) => booleanOperation(a, b, op, g, tape)),
     ])
 
   scope.set('union', boolOp('union'))
@@ -612,7 +609,7 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
     } else {
       throw new Error('Extrude3D: first argument must be a region, polygon, or rectangle')
     }
-    return createExtrusionVal(region, heightNV, g)
+    return createExtrusionVal(region, heightNV, g, tape)
   })
 
   // 3D: Axis constants
@@ -635,9 +632,10 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph): Scope {
 
 
 function extrudePolygon(
-  poly: PolygonVal, h: number, g: LineageGraph,
+  poly: PolygonVal, h: number, hNV: NumericValue, g: LineageGraph,
   bottomEdges: Edge3Val[], topEdges: Edge3Val[],
   verticalEdges: Edge3Val[], verticalFaces: Face3Val[],
+  tape?: Tape | null,
 ): { bottom: Polygon3Val; top: Polygon3Val } {
   const n = poly.points.length
   const bottomPts: Point3Val[] = []
@@ -645,11 +643,11 @@ function extrudePolygon(
 
   // Create bottom (z=0) and top (z=h) 3D points with lineage from 2D points
   for (const pt of poly.points) {
-    const bp = createPoint3(pt.x.toNumber(), pt.y.toNumber(), 0)
+    const bp = createPoint3(pt.x, pt.y, nv(0, tape))
     g.direct(pt, bp)
     bottomPts.push(bp)
 
-    const tp = createPoint3(pt.x.toNumber(), pt.y.toNumber(), h)
+    const tp = createPoint3(pt.x, pt.y, hNV)
     g.direct(pt, tp)
     topPts.push(tp)
 
@@ -696,7 +694,7 @@ function extrudePolygon(
   return { bottom: bottomPoly, top: topPoly }
 }
 
-function createExtrusionVal(region: RegionVal, height: NumericValue, g: LineageGraph): ExtrusionVal {
+function createExtrusionVal(region: RegionVal, height: NumericValue, g: LineageGraph, tape?: Tape | null): ExtrusionVal {
   const h = height.toNumber()
 
   const bottomEdges: Edge3Val[] = []
@@ -710,12 +708,12 @@ function createExtrusionVal(region: RegionVal, height: NumericValue, g: LineageG
   const topNegative: Polygon3Val[] = []
 
   for (const poly of region.positive) {
-    const { bottom, top } = extrudePolygon(poly, h, g, bottomEdges, topEdges, verticalEdges, verticalFaces)
+    const { bottom, top } = extrudePolygon(poly, h, height, g, bottomEdges, topEdges, verticalEdges, verticalFaces, tape)
     bottomPositive.push(bottom)
     topPositive.push(top)
   }
   for (const poly of region.negative) {
-    const { bottom, top } = extrudePolygon(poly, h, g, bottomEdges, topEdges, verticalEdges, verticalFaces)
+    const { bottom, top } = extrudePolygon(poly, h, height, g, bottomEdges, topEdges, verticalEdges, verticalFaces, tape)
     bottomNegative.push(bottom)
     topNegative.push(top)
   }

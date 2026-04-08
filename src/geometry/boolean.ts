@@ -6,7 +6,10 @@ import {
   type RegionVal,
   createPoint,
   createPolygon,
+  nv,
 } from '@/lang/values'
+import type { NumericValue } from '@/lang/numeric'
+import type { Tape } from '@/lang/grad'
 import type { LineageGraph } from '@/lang/lineage'
 import { pointInPolygon } from '@/geometry/polygon'
 
@@ -33,6 +36,8 @@ type VertexOrigin = {
 
 type Vertex = Vec2 & {
   id: number
+  nx: NumericValue
+  ny: NumericValue
   origin: VertexOrigin
 }
 
@@ -50,14 +55,14 @@ type SubEdge = {
 class VertexPool {
   private verts: Vertex[] = []
 
-  getOrCreate(x: number, y: number): Vertex {
+  getOrCreate(x: number, y: number, nx: NumericValue, ny: NumericValue): Vertex {
     const sx = Math.round(x / SNAP) * SNAP
     const sy = Math.round(y / SNAP) * SNAP
     for (const v of this.verts) {
       if (Math.abs(v.x - sx) < MATCH_EPS && Math.abs(v.y - sy) < MATCH_EPS) return v
     }
     const v: Vertex = {
-      x: sx, y: sy, id: this.verts.length,
+      x: sx, y: sy, nx, ny, id: this.verts.length,
       origin: { sourcePoints: [], sourceEdges: [] },
     }
     this.verts.push(v)
@@ -68,7 +73,7 @@ class VertexPool {
 }
 
 
-// ---- Geometry utilities ----
+// ---- Geometry utilities (plain numbers for decisions) ----
 
 
 function dist2(a: Vec2, b: Vec2): number {
@@ -100,7 +105,24 @@ function polyContainsPoly(outer: Vec2[], inner: Vec2[]): boolean {
 }
 
 
-// ---- Segment-segment intersection (matching segmentSegmentBoolean) ----
+// ---- NumericValue interpolation helpers ----
+
+
+/** Interpolate between two NumericValue points: a + t * (b - a) */
+function lerpNV(
+  ax: NumericValue, ay: NumericValue,
+  bx: NumericValue, by: NumericValue,
+  t: number, tape?: Tape | null,
+): { nx: NumericValue; ny: NumericValue } {
+  const tNV = nv(t, tape)
+  return {
+    nx: ax.add(bx.sub(ax).mul(tNV)),
+    ny: ay.add(by.sub(ay).mul(tNV)),
+  }
+}
+
+
+// ---- Segment-segment intersection ----
 
 
 type Intersection = {
@@ -110,15 +132,6 @@ type Intersection = {
   tB: number
 }
 
-/**
- * Find intersections between two segments. Returns 0..4 results.
- *
- * For non-parallel segments: standard parametric intersection (0 or 1 result).
- * For collinear/parallel segments: tests all 4 endpoints against the other
- * segment, returning the overlap boundary points (0..4 results).
- *
- * This matches the reference `segmentSegmentBoolean` function.
- */
 function segSegIntersect(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2): Intersection[] {
   const dax = a2.x - a1.x, day = a2.y - a1.y
   const dbx = b2.x - b1.x, dby = b2.y - b1.y
@@ -143,7 +156,7 @@ function segSegIntersect(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2): Intersection[]
         x: segStart.x + t * (segEnd.x - segStart.x),
         y: segStart.y + t * (segEnd.y - segStart.y),
       }
-      if (dist2(proj, pt) > SEG_TOL_SQ) return // pt not on this line
+      if (dist2(proj, pt) > SEG_TOL_SQ) return
       const constParam = isEnd ? 1.0 : 0.0
       const tA = isFromA ? constParam : t
       const tB = isFromA ? t : constParam
@@ -156,11 +169,10 @@ function segSegIntersect(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2): Intersection[]
       }
     }
 
-    // Test each of the 4 endpoints against the other segment
-    addIntervalPoint(b1, b2, a1, true, false)   // a1 on B → tA=0
-    addIntervalPoint(b1, b2, a2, true, true)     // a2 on B → tA=1
-    addIntervalPoint(a1, a2, b1, false, false)   // b1 on A → tB=0
-    addIntervalPoint(a1, a2, b2, false, true)    // b2 on A → tB=1
+    addIntervalPoint(b1, b2, a1, true, false)
+    addIntervalPoint(b1, b2, a2, true, true)
+    addIntervalPoint(a1, a2, b1, false, false)
+    addIntervalPoint(a1, a2, b2, false, true)
 
     return result
   }
@@ -189,9 +201,11 @@ type ShatterResult = {
 }
 
 function shatterPolygon(
-  pts: Vec2[], edges: Edge2Val[], polyId: 0 | 1,
-  otherPts: Vec2[], otherEdges: Edge2Val[],
-  pool: VertexPool,
+  pts: Vec2[], npts: { nx: NumericValue; ny: NumericValue }[],
+  edges: Edge2Val[], polyId: 0 | 1,
+  otherPts: Vec2[], otherNPts: { nx: NumericValue; ny: NumericValue }[],
+  otherEdges: Edge2Val[],
+  pool: VertexPool, tape?: Tape | null,
 ): ShatterResult {
   const n = pts.length
   const result: SubEdge[] = []
@@ -200,9 +214,10 @@ function shatterPolygon(
   for (let i = 0; i < n; i++) {
     const p0 = pts[i]
     const p1 = pts[(i + 1) % n]
+    const np0 = npts[i]
+    const np1 = npts[(i + 1) % n]
     const srcEdge = edges[i]
 
-    // Find all intersection parameters along this edge
     const splits: { t: number; vertex: Vertex }[] = []
 
     const m = otherPts.length
@@ -213,17 +228,16 @@ function shatterPolygon(
 
       for (const ix of ixs) {
         foundIntersections = true
-
-        // Only split if intersection is in the interior of THIS edge
         if (ix.tA < EPS || ix.tA > 1 - EPS) continue
 
-        const v = pool.getOrCreate(ix.x, ix.y)
+        // Interpolate in NumericValue space
+        const { nx, ny } = lerpNV(np0.nx, np0.ny, np1.nx, np1.ny, ix.tA, tape)
+        const v = pool.getOrCreate(ix.x, ix.y, nx, ny)
         v.origin.sourceEdges.push(srcEdge, otherEdges[j])
         splits.push({ t: ix.tA, vertex: v })
       }
     }
 
-    // Sort by parameter and deduplicate
     splits.sort((a, b) => a.t - b.t)
     const unique: typeof splits = []
     for (const s of splits) {
@@ -231,9 +245,8 @@ function shatterPolygon(
       unique.push(s)
     }
 
-    // Build sub-edges
-    const startV = pool.getOrCreate(p0.x, p0.y)
-    const endV = pool.getOrCreate(p1.x, p1.y)
+    const startV = pool.getOrCreate(p0.x, p0.y, np0.nx, np0.ny)
+    const endV = pool.getOrCreate(p1.x, p1.y, np1.nx, np1.ny)
 
     if (unique.length === 0) {
       result.push({ startId: startV.id, endId: endV.id, srcEdge, srcPoly: polyId })
@@ -251,12 +264,7 @@ function shatterPolygon(
 }
 
 
-// ---- Edge deduplication (matching reference merge* pattern) ----
-//
-// Process all sub-edges one at a time. When an equal or reverse edge is found
-// in the accumulator, handle it per the operation rules. Edges that survive
-// dedup as "edgesOnBoth" bypass the containment filter entirely — this is
-// critical because their midpoints sit on the other polygon's boundary.
+// ---- Edge deduplication ----
 
 
 function deduplicateAndFilter(
@@ -269,29 +277,27 @@ function deduplicateAndFilter(
   let allEdges: SubEdge[] = []
 
   function insert(edge: SubEdge) {
-    // Check for equal edge (same start, same end)
     const eqIdx = allEdges.findIndex((e) =>
       e.startId === edge.startId && e.endId === edge.endId)
     if (eqIdx >= 0) {
       const matched = allEdges[eqIdx]
       allEdges.splice(eqIdx, 1)
       switch (op) {
-        case 'union':        edgesOnBoth.push(matched); return  // keep one
-        case 'intersection': edgesOnBoth.push(matched); return  // keep one
-        case 'difference':   return                             // discard both
+        case 'union':        edgesOnBoth.push(matched); return
+        case 'intersection': edgesOnBoth.push(matched); return
+        case 'difference':   return
       }
     }
 
-    // Check for reverse edge (start↔end swapped)
     const revIdx = allEdges.findIndex((e) =>
       e.startId === edge.endId && e.endId === edge.startId)
     if (revIdx >= 0) {
       const matched = allEdges[revIdx]
       allEdges.splice(revIdx, 1)
       switch (op) {
-        case 'union':        return                             // discard both
-        case 'intersection': return                             // discard both
-        case 'difference':   edgesOnBoth.push(matched); return  // keep one
+        case 'union':        return
+        case 'intersection': return
+        case 'difference':   edgesOnBoth.push(matched); return
       }
     }
 
@@ -301,7 +307,6 @@ function deduplicateAndFilter(
   for (const e of subEdgesA) insert(e)
   for (const e of subEdgesB) insert(e)
 
-  // Filter remaining edges by midpoint containment
   const filtered: SubEdge[] = []
   for (const e of allEdges) {
     const s = pool.get(e.startId)
@@ -320,10 +325,8 @@ function deduplicateAndFilter(
     if (keep) filtered.push(e)
   }
 
-  // Re-add edges that were on both polygons (they skip containment)
   filtered.push(...edgesOnBoth)
 
-  // For difference: flip all B edges
   return filtered.map((e) => {
     if (op === 'difference' && e.srcPoly === 1) {
       return { startId: e.endId, endId: e.startId, srcEdge: e.srcEdge, srcPoly: e.srcPoly }
@@ -334,10 +337,6 @@ function deduplicateAndFilter(
 
 
 // ---- Graph reconstruction ----
-//
-// Walk directed edges to extract closed polygon loops. At each vertex,
-// pick the outgoing edge using the "highest angle < incoming reverse"
-// rule (matching the reference `reconstructRegion`).
 
 
 type Loop = {
@@ -348,8 +347,6 @@ type Loop = {
 function reconstructLoops(edges: SubEdge[], pool: VertexPool): Loop[] {
   if (edges.length === 0) return []
 
-  // Build adjacency: vertex → outgoing edges with angles
-  // Angle uses +π offset to match reference convention
   const adj = new Map<number, { endId: number; idx: number; angle: number }[]>()
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i]
@@ -371,7 +368,6 @@ function reconstructLoops(edges: SubEdge[], pool: VertexPool): Loop[] {
   const loops: Loop[] = []
 
   while (unvisited.size > 0) {
-    // Prefer starting from an edge with a single outgoing at its start
     let startIdx: number | undefined
     for (const idx of unvisited) {
       const outgoing = adj.get(edges[idx].startId)
@@ -392,10 +388,8 @@ function reconstructLoops(edges: SubEdge[], pool: VertexPool): Loop[] {
       loop.vertexIds.push(e.startId)
       loop.subEdges.push(e)
 
-      // Closed?
       if (e.endId === startVertexId) break
 
-      // Find next edge
       const outgoing = adj.get(e.endId)
       if (!outgoing) break
 
@@ -428,7 +422,6 @@ function reconstructLoops(edges: SubEdge[], pool: VertexPool): Loop[] {
       currentIdx = nextIdx
     }
 
-    // Accept only closed loops with ≥3 vertices
     if (loop.vertexIds.length >= 3 &&
         loop.subEdges[loop.subEdges.length - 1].endId === startVertexId) {
       loops.push(loop)
@@ -467,7 +460,6 @@ function mergeCollinearEdges(loop: Loop, pool: VertexPool): Loop {
     }
   }
 
-  // Wrap-around: check if last and first are collinear
   if (merged.length > 1 && isCollinear(pool, merged[merged.length - 1].subEdge, merged[0].subEdge)) {
     const last = merged.pop()!
     merged[0].subEdge = { ...merged[0].subEdge, startId: last.subEdge.startId }
@@ -491,7 +483,7 @@ function buildOutputPolygon(
 ): PolygonVal {
   const points: Point2Val[] = loop.vertexIds.map((vid) => {
     const v = pool.get(vid)
-    const pt = createPoint(v.x, v.y)
+    const pt = createPoint(v.nx, v.ny)
     for (const sp of v.origin.sourcePoints) g.direct(sp, pt)
     for (const se of v.origin.sourceEdges) g.direct(se, pt)
     return pt
@@ -499,7 +491,6 @@ function buildOutputPolygon(
 
   const poly = createPolygon(points, g)
 
-  // Direct lineage: source edge → output edge
   for (let i = 0; i < loop.subEdges.length; i++) {
     g.direct(loop.subEdges[i].srcEdge, poly.edges[i])
   }
@@ -511,12 +502,20 @@ function buildOutputPolygon(
 // ---- Extract polygon data from Value ----
 
 
-function extractPoly(v: Value): { pts: Vec2[]; points: Point2Val[]; edges: Edge2Val[] } {
+type PolyData = {
+  pts: Vec2[]
+  npts: { nx: NumericValue; ny: NumericValue }[]
+  points: Point2Val[]
+  edges: Edge2Val[]
+}
+
+function extractPoly(v: Value): PolyData {
   switch (v.type) {
     case 'rectangle':
     case 'polygon':
       return {
         pts: v.points.map((p) => ({ x: p.x.toNumber(), y: p.y.toNumber() })),
+        npts: v.points.map((p) => ({ nx: p.x, ny: p.y })),
         points: v.points,
         edges: v.edges,
       }
@@ -532,33 +531,32 @@ function extractPoly(v: Value): { pts: Vec2[]; points: Point2Val[]; edges: Edge2
 export type BooleanOp = 'union' | 'difference' | 'intersection'
 
 export function booleanOperation(
-  a: Value, b: Value, op: BooleanOp, g: LineageGraph,
+  a: Value, b: Value, op: BooleanOp, g: LineageGraph, tape?: Tape | null,
 ): RegionVal {
   const polyA = extractPoly(a)
   const polyB = extractPoly(b)
   const pool = new VertexPool()
 
-  // Seed vertex pool with original polygon vertices
-  for (const pt of polyA.points) {
-    pool.getOrCreate(pt.x.toNumber(), pt.y.toNumber()).origin.sourcePoints.push(pt)
+  // Seed vertex pool with original polygon vertices (with NumericValue coords)
+  for (let i = 0; i < polyA.points.length; i++) {
+    const pt = polyA.points[i]
+    pool.getOrCreate(pt.x.toNumber(), pt.y.toNumber(), pt.x, pt.y).origin.sourcePoints.push(pt)
   }
-  for (const pt of polyB.points) {
-    pool.getOrCreate(pt.x.toNumber(), pt.y.toNumber()).origin.sourcePoints.push(pt)
+  for (let i = 0; i < polyB.points.length; i++) {
+    const pt = polyB.points[i]
+    pool.getOrCreate(pt.x.toNumber(), pt.y.toNumber(), pt.x, pt.y).origin.sourcePoints.push(pt)
   }
 
   // Shatter both polygons at intersection points
   const resultA = shatterPolygon(
-    polyA.pts, polyA.edges, 0,
-    polyB.pts, polyB.edges, pool,
+    polyA.pts, polyA.npts, polyA.edges, 0,
+    polyB.pts, polyB.npts, polyB.edges, pool, tape,
   )
   const resultB = shatterPolygon(
-    polyB.pts, polyB.edges, 1,
-    polyA.pts, polyA.edges, pool,
+    polyB.pts, polyB.npts, polyB.edges, 1,
+    polyA.pts, polyA.npts, polyA.edges, pool, tape,
   )
 
-  // The collinear-aware segSegIntersect detects ANY touching between
-  // polygons (including shared edges, shared vertices). If nothing was
-  // found, the polygons are fully separated or one contains the other.
   const hasIntersections = resultA.foundIntersections || resultB.foundIntersections
 
   if (!hasIntersections) {
@@ -581,7 +579,7 @@ export function booleanOperation(
     }
   }
 
-  // Full boolean pipeline: dedup + filter + reconstruct
+  // Full boolean pipeline
   const finalEdges = deduplicateAndFilter(
     resultA.subEdges, resultB.subEdges, pool, polyA.pts, polyB.pts, op,
   )
@@ -607,6 +605,7 @@ export function booleanOperation(
 
 
 // ---- Early-return helpers ----
+// These preserve NumericValue through since they copy from the original Point2Val.
 
 
 function buildSingleRegion(v: Value, g: LineageGraph): RegionVal {
@@ -633,7 +632,6 @@ function buildDifferenceHole(outer: Value, hole: Value, g: LineageGraph): Region
   const h = extractPoly(hole)
   const pts = h.points.map((pt) => createPoint(pt.x, pt.y))
   for (let i = 0; i < pts.length; i++) g.direct(h.points[i], pts[i])
-  // Reverse points for CW winding (hole)
   const reversed = [...pts].reverse()
   const holePoly = createPolygon(reversed, g)
   for (let i = 0; i < h.edges.length; i++) g.direct(h.edges[i], holePoly.edges[i])

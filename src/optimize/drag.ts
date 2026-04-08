@@ -113,17 +113,19 @@ export function buildDragSession(
     }
   }
 
-  // Register ptX/ptY as pseudo-params so their sub-tape indices are tracked.
-  // forward() won't overwrite them because we never pass __ptX/__ptY in the
-  // params map — they get recomputed normally as non-Const nodes.
+  // Register computed nodes as pseudo-params so their sub-tape indices are tracked.
+  // forward() won't overwrite them because we never pass these in the params map —
+  // they get recomputed normally as non-Const nodes.
   tape.paramIndices.set('__ptX', ptX.index)
   tape.paramIndices.set('__ptY', ptY.index)
+  tape.paramIndices.set('__loss', loss.index)
 
   const subTape = extractSubTape(tape, loss.index)
 
   // Clean up pseudo-params from the original tape (it may be reused/stored)
   tape.paramIndices.delete('__ptX')
   tape.paramIndices.delete('__ptY')
+  tape.paramIndices.delete('__loss')
   tape.paramIndices.delete('__targetX')
   tape.paramIndices.delete('__targetY')
 
@@ -147,6 +149,18 @@ export async function optimizeDrag(
 ): Promise<{ x: number; y: number }> {
   await nlopt.ready
   const { subTape, paramNames } = session
+  const lossIdx = subTape.paramIndices.get('__loss')!
+
+  // Nothing to optimize if there are no parameters
+  if (paramNames.length === 0) {
+    subTape.forward(new Map([['__targetX', targetX], ['__targetY', targetY]]))
+    const ptXIdx = subTape.paramIndices.get('__ptX')
+    const ptYIdx = subTape.paramIndices.get('__ptY')
+    return {
+      x: ptXIdx != null ? subTape.nodes[ptXIdx].primal : targetX,
+      y: ptYIdx != null ? subTape.nodes[ptYIdx].primal : targetY,
+    }
+  }
 
   const sliders = useStore.getState().sliders
   const x0 = paramNames.map((n) =>
@@ -172,15 +186,17 @@ export async function optimizeDrag(
     params.set('__targetX', targetX)
     params.set('__targetY', targetY)
 
+    subTape.forward(params)
+    const lossVal = subTape.nodes[lossIdx].primal
+
     if (grad) {
-      const loss = subTape.forwardBackward(params)
+      subTape.reset()
+      subTape.backward(lossIdx)
       for (let i = 0; i < paramNames.length; i++) {
         grad[i] = subTape.grad(paramNames[i])
       }
-      return loss
-    } else {
-      return subTape.forward(params)
     }
+    return lossVal
   }, 1e-8)
 
   opt.setLowerBounds(lowerBounds)

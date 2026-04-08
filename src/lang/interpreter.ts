@@ -181,7 +181,7 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
 
     case 'PropertyAccess': {
       const obj = evaluate(expr.object, ctx, buf, g, tape)
-      return getProperty(obj, expr.property, g)
+      return getProperty(obj, expr.property, g, tape)
     }
 
     case 'Apply': {
@@ -268,10 +268,9 @@ export function executeProgram(
 ): ExecutionResult {
   const buf: DrawBuffer = { batches: [] }
   const g = new LineageGraph()
-  const builtins = makeBuiltins(buf, g)
-  const ctx = new Context(builtins)
-
   const tape = mode === 'dual' ? new Tape() : null
+  const builtins = makeBuiltins(buf, g, tape)
+  const ctx = new Context(builtins)
 
   // Inject parameter values
   if (program.parameters) {

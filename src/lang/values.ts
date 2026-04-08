@@ -191,6 +191,11 @@ function toNV(v: NumericValue | number): NumericValue {
   return typeof v === 'number' ? real(v) : v
 }
 
+/** Create a NumericValue constant, using the tape if available (for DualValue compat). */
+export function nv(value: number, tape?: Tape | null): NumericValue {
+  return createNumber(value, tape).value
+}
+
 export function createNumber(value: NumericValue | number, tape?: Tape | null, paramName?: string): NumberVal {
   if (tape && typeof value === 'number') {
     const index = paramName ? tape.pushParam(paramName, value) : tape.pushConst(value)
