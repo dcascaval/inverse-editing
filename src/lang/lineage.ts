@@ -55,6 +55,7 @@ export class LineageGraph {
 
   /** Mark a value as a root primitive, assigning it the next sequential index. */
   markRoot(v: Value): void {
+    if (this.rootIndex.has(v)) return
     this.rootIndex.set(v, this.rootCount++)
   }
 

@@ -511,9 +511,22 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph, tape?: Tape | nul
   }, 'Polygon')
 
   scope.set('edge', overloaded('edge', [
-    signature([Pt2, Pt2], (p1, p2) => createEdge(p1, p2, g)),
-    signature([Num, Num, Num, Num], (x1, y1, x2, y2) =>
-      createEdge(createPoint(x1.value, y1.value), createPoint(x2.value, y2.value), g)),
+    signature([Pt2, Pt2], (p1, p2) => {
+      g.markRoot(p1)
+      g.markRoot(p2)
+      const e = createEdge(p1, p2, g)
+      g.markRoot(e)
+      return e
+    }),
+    signature([Num, Num, Num, Num], (x1, y1, x2, y2) => {
+      const p1 = createPoint(x1.value, y1.value)
+      const p2 = createPoint(x2.value, y2.value)
+      g.markRoot(p1)
+      g.markRoot(p2)
+      const e = createEdge(p1, p2, g)
+      g.markRoot(e)
+      return e
+    }),
   ]))
 
   alias('edge', 'line', 'Line')

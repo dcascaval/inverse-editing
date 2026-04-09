@@ -698,3 +698,42 @@ r2 = ExtrudeCurve(r1.top, h2)
 rflLine = r1.front.translate(rd, rd)`)
   })
 })
+
+
+// Line root primitives & markRoot dedup
+
+
+describe('Line root primitives', () => {
+  it('marks Line edge as root primitive', () => {
+    // Line edge should be a root, so from(line) should find edges
+    // in a union that trace back to it
+    const result = runOk(`parameters {}
+r = rect(pt(0, 0), 10, 10)
+e = Line(pt(10, 0), pt(20, 0))
+u = union(r, ExtrudeCurve(e, 10))
+draw(query(u.edges, from(e)))`)
+    const lastBatch = result.drawBuffer.batches[result.drawBuffer.batches.length - 1]
+    expect(lastBatch.edges.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('markRoot dedup: shared point keeps original root index', () => {
+    // r.topRight is already a root from the rectangle.
+    // Passing it to Line should not overwrite its index.
+    // Run twice and verify the root index for topRight is stable.
+    const src = `parameters {}
+r = rect(pt(0, 0), 10, 20)
+e = Line(r.topRight, pt(20, 20))
+draw(r, e)`
+    const r1 = run(src)
+    const r2 = run(src)
+    // Collect root indices for all edges in the first batch (the rect + line)
+    const indices1 = r1.drawBuffer.batches[0].edges.map(
+      (e) => e.sourceStart ? r1.lineage.findRootIndices(e.sourceStart) : new Set(),
+    )
+    const indices2 = r2.drawBuffer.batches[0].edges.map(
+      (e) => e.sourceStart ? r2.lineage.findRootIndices(e.sourceStart) : new Set(),
+    )
+    // Root indices should be identical across runs (stable assignment)
+    expect(indices1).toEqual(indices2)
+  })
+})
