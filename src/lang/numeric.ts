@@ -18,6 +18,11 @@ export interface NumericValue<Self extends NumericValue<Self> = any> {
   abs(): Self
   sin(): Self
   cos(): Self
+  tan(): Self
+  asin(): Self
+  acos(): Self
+  atan(): Self
+  atan2(other: Self): Self
   log(): Self
   sqrt(): Self
   min(other: Self): Self
@@ -42,6 +47,11 @@ export class RealValue implements NumericValue<RealValue> {
   abs(): RealValue { return new RealValue(Math.abs(this.value)) }
   sin(): RealValue { return new RealValue(Math.sin(this.value)) }
   cos(): RealValue { return new RealValue(Math.cos(this.value)) }
+  tan(): RealValue { return new RealValue(Math.tan(this.value)) }
+  asin(): RealValue { return new RealValue(Math.asin(this.value)) }
+  acos(): RealValue { return new RealValue(Math.acos(this.value)) }
+  atan(): RealValue { return new RealValue(Math.atan(this.value)) }
+  atan2(other: RealValue): RealValue { return new RealValue(Math.atan2(this.value, other.value)) }
   log(): RealValue { return new RealValue(Math.log(this.value)) }
   sqrt(): RealValue { return new RealValue(Math.sqrt(this.value)) }
   min(other: RealValue): RealValue { return new RealValue(Math.min(this.value, other.value)) }

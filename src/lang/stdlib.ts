@@ -627,6 +627,63 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph, tape?: Tape | nul
     } satisfies RectangleVal
   }, 'extrudeCurve')
 
+  // Math constants & functions
+
+  scope.set('PI', createNumber(Math.PI, tape))
+
+  register('sin', (args) => {
+    if (args.length !== 1) throw new Error('sin: expected 1 argument')
+    return createNumber(asNumeric(args[0], 'sin').sin())
+  })
+  register('cos', (args) => {
+    if (args.length !== 1) throw new Error('cos: expected 1 argument')
+    return createNumber(asNumeric(args[0], 'cos').cos())
+  })
+  register('tan', (args) => {
+    if (args.length !== 1) throw new Error('tan: expected 1 argument')
+    return createNumber(asNumeric(args[0], 'tan').tan())
+  })
+  register('asin', (args) => {
+    if (args.length !== 1) throw new Error('asin: expected 1 argument')
+    return createNumber(asNumeric(args[0], 'asin').asin())
+  })
+  register('acos', (args) => {
+    if (args.length !== 1) throw new Error('acos: expected 1 argument')
+    return createNumber(asNumeric(args[0], 'acos').acos())
+  })
+  register('atan', (args) => {
+    if (args.length !== 1) throw new Error('atan: expected 1 argument')
+    return createNumber(asNumeric(args[0], 'atan').atan())
+  })
+  register('atan2', (args) => {
+    if (args.length !== 2) throw new Error('atan2: expected 2 arguments')
+    return createNumber(asNumeric(args[0], 'atan2').atan2(asNumeric(args[1], 'atan2')))
+  })
+  register('abs', (args) => {
+    if (args.length !== 1) throw new Error('abs: expected 1 argument')
+    return createNumber(asNumeric(args[0], 'abs').abs())
+  })
+  register('sqrt', (args) => {
+    if (args.length !== 1) throw new Error('sqrt: expected 1 argument')
+    return createNumber(asNumeric(args[0], 'sqrt').sqrt())
+  })
+  register('log', (args) => {
+    if (args.length !== 1) throw new Error('log: expected 1 argument')
+    return createNumber(asNumeric(args[0], 'log').log())
+  })
+  register('pow', (args) => {
+    if (args.length !== 2) throw new Error('pow: expected 2 arguments')
+    return createNumber(asNumeric(args[0], 'pow').pow(asNumeric(args[1], 'pow')))
+  })
+  register('min', (args) => {
+    if (args.length !== 2) throw new Error('min: expected 2 arguments')
+    return createNumber(asNumeric(args[0], 'min').min(asNumeric(args[1], 'min')))
+  })
+  register('max', (args) => {
+    if (args.length !== 2) throw new Error('max: expected 2 arguments')
+    return createNumber(asNumeric(args[0], 'max').max(asNumeric(args[1], 'max')))
+  })
+
   // Debug
 
   register('print', (args) => {

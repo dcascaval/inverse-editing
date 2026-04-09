@@ -88,21 +88,27 @@ const exampleFiles = import.meta.glob('../examples/*.txt', {
 /** Merge example programs into the store, skipping names that already exist. */
 export function loadExamples() {
   const { programs } = useStore.getState()
-  const existingNames = new Set(programs.map((p) => p.name))
-  const toAdd: Program[] = []
 
+  // Build a map of example name → latest code
+  const exampleMap = new Map<string, string>()
   for (const [path, code] of Object.entries(exampleFiles)) {
     const file = path.split('/').pop()!.replace(/\.txt$/, '')
-    const name = `examples/${file}`
-    if (!existingNames.has(name)) {
-      toAdd.push({ name, code })
-    }
+    exampleMap.set(`examples/${file}`, code)
+  }
+
+  // Overwrite existing examples, keep user programs, append new examples
+  const updated = programs.map((p) =>
+    exampleMap.has(p.name) ? { ...p, code: exampleMap.get(p.name)! } : p
+  )
+  const existingNames = new Set(programs.map((p) => p.name))
+  for (const [name, code] of exampleMap) {
+    if (!existingNames.has(name)) updated.push({ name, code })
   }
 
   const hadUserPrograms = programs.some((p) => p.name && p.name !== 'untitled')
-  const allPrograms = toAdd.length > 0 ? [...programs, ...toAdd] : programs
+  const allPrograms = updated
 
-  if (toAdd.length > 0) {
+  if (allPrograms !== programs) {
     useStore.setState({ programs: allPrograms })
   }
 

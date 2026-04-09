@@ -1,0 +1,72 @@
+// Dovetail joint: two interlocking plates with trapezoidal fingers.
+// The taper angle controls the finger profile — at 0 it's a box joint,
+// as it increases the fingers become trapezoidal dovetails.
+// Past a critical angle the fingers interfere with each other.
+
+parameters {
+  baseW: 30
+  baseH: 8
+  nFingers: 3
+  fingerH: 4 < 6 < 10
+  taper: 0 < 12 < 30
+  gap: 0 < 0.5 < 2
+  chmf: 0 < 1 < 3
+}
+
+// Bottom plate
+plate = rect(0, 0, baseW, baseH)
+
+// Build one finger as a trapezoid using ExtrudeCurve
+// Start from a line segment, extrude at an angle
+fingerW = baseW / (2 * nFingers + 1)
+taperRad = taper * PI / 180
+dx = fingerH * tan(taperRad)
+
+operation finger(cx) {
+  // Base edge of finger, centered at cx on top of plate
+  basePt1 = pt(cx - fingerW/2, baseH)
+  basePt2 = pt(cx + fingerW/2, baseH)
+  baseEdge = line(basePt1, basePt2)
+
+  // Extrude up, then widen by constructing the trapezoid from rects
+  // Narrow bottom rect + widening top
+  body = rect(cx - fingerW/2, baseH, fingerW, fingerH)
+
+  // Taper wedges on each side
+  leftWedge = rect(cx - fingerW/2 - dx, baseH, dx, fingerH)
+  rightWedge = rect(cx + fingerW/2, baseH, dx, fingerH)
+
+  shape = unionAll(body, leftWedge, rightWedge)
+
+  // Chamfer the outer top corners
+  topQuery = from(body.top) and not(derivedFrom(baseEdge))
+  cPoints = query(shape.points, fromAny(leftWedge.topLeft, rightWedge.topRight))
+}
+
+// Place fingers at odd positions
+f1 = finger(fingerW * 1.5)
+f2 = finger(fingerW * 3.5)
+f3 = finger(fingerW * 5.5)
+
+tail = unionAll(plate, f1.shape, f2.shape, f3.shape)
+tail = chamfer(tail.single(), query(tail.points, fromAny(f1.cPoints, f2.cPoints, f3.cPoints)), chmf)
+
+// Mating pin board — shifted up by finger height + gap
+pinPlate = rect(0, baseH + fingerH + gap, baseW, baseH)
+
+// Pin board's fingers fill the gaps between tail fingers
+p1 = finger(fingerW * 0.5)
+p2 = finger(fingerW * 2.5)
+p3 = finger(fingerW * 4.5)
+
+// Pins mirror downward
+pinF1 = p1.shape.mirror(pt(0, baseH + fingerH/2 + gap/2), pt(1, baseH + fingerH/2 + gap/2))
+pinF2 = p2.shape.mirror(pt(0, baseH + fingerH/2 + gap/2), pt(1, baseH + fingerH/2 + gap/2))
+pinF3 = p3.shape.mirror(pt(0, baseH + fingerH/2 + gap/2), pt(1, baseH + fingerH/2 + gap/2))
+
+pin = unionAll(pinPlate, pinF1, pinF2, pinF3)
+
+draw(tail, translucent(0.2))
+draw(tail.edges, color(gray))
+draw(pin, translucent(0.2))
+draw(pin.edges, color(blue))

@@ -71,6 +71,31 @@ export class DualValue implements NumericValue<DualValue> {
       OpKind.Cos, this.index, Math.cos(this.primal)))
   }
 
+  tan(): DualValue {
+    return new DualValue(this.tape, this.tape.pushUnary(
+      OpKind.Tan, this.index, Math.tan(this.primal)))
+  }
+
+  asin(): DualValue {
+    return new DualValue(this.tape, this.tape.pushUnary(
+      OpKind.Asin, this.index, Math.asin(this.primal)))
+  }
+
+  acos(): DualValue {
+    return new DualValue(this.tape, this.tape.pushUnary(
+      OpKind.Acos, this.index, Math.acos(this.primal)))
+  }
+
+  atan(): DualValue {
+    return new DualValue(this.tape, this.tape.pushUnary(
+      OpKind.Atan, this.index, Math.atan(this.primal)))
+  }
+
+  atan2(other: DualValue): DualValue {
+    return new DualValue(this.tape, this.tape.pushBinary(
+      OpKind.Atan2, this.index, other.index, Math.atan2(this.primal, other.primal)))
+  }
+
   log(): DualValue {
     return new DualValue(this.tape, this.tape.pushUnary(
       OpKind.Log, this.index, Math.log(this.primal)))
@@ -148,6 +173,11 @@ export enum OpKind {
   Abs,
   Sin,
   Cos,
+  Tan,
+  Asin,
+  Acos,
+  Atan,
+  Atan2,
   Log,
   Sqrt,
   Min,
@@ -249,6 +279,11 @@ export class Tape {
         case OpKind.Abs: node.primal = Math.abs(a); break
         case OpKind.Sin: node.primal = Math.sin(a); break
         case OpKind.Cos: node.primal = Math.cos(a); break
+        case OpKind.Tan: node.primal = Math.tan(a); break
+        case OpKind.Asin: node.primal = Math.asin(a); break
+        case OpKind.Acos: node.primal = Math.acos(a); break
+        case OpKind.Atan: node.primal = Math.atan(a); break
+        case OpKind.Atan2: node.primal = Math.atan2(a, b); break
         case OpKind.Log: node.primal = Math.log(a); break
         case OpKind.Sqrt: node.primal = Math.sqrt(a); break
         case OpKind.Min: node.primal = Math.min(a, b); break
@@ -320,6 +355,19 @@ export class Tape {
         case OpKind.Abs: tangents[i] = da * Math.sign(n[node.inputA].primal); break
         case OpKind.Sin: tangents[i] = da * Math.cos(n[node.inputA].primal); break
         case OpKind.Cos: tangents[i] = da * -Math.sin(n[node.inputA].primal); break
+        case OpKind.Tan: {
+          const c = Math.cos(n[node.inputA].primal)
+          tangents[i] = da / (c * c); break
+        }
+        case OpKind.Asin: tangents[i] = da / Math.sqrt(1 - n[node.inputA].primal ** 2); break
+        case OpKind.Acos: tangents[i] = -da / Math.sqrt(1 - n[node.inputA].primal ** 2); break
+        case OpKind.Atan: tangents[i] = da / (1 + n[node.inputA].primal ** 2); break
+        case OpKind.Atan2: {
+          const yp = n[node.inputA].primal
+          const xp = n[node.inputB].primal
+          const r2 = xp * xp + yp * yp
+          tangents[i] = (da * xp - db * yp) / r2; break
+        }
         case OpKind.Log: tangents[i] = da / n[node.inputA].primal; break
         case OpKind.Sqrt: tangents[i] = da / (2 * node.primal); break
         case OpKind.Min: {
@@ -411,6 +459,39 @@ function backwardPass(nodes: TapeNode[], from: number): void {
       case OpKind.Cos: {
         const xp = nodes[node.inputA].primal
         nodes[node.inputA].adjoint += a * -Math.sin(xp)
+        break
+      }
+
+      case OpKind.Tan: {
+        const c = Math.cos(nodes[node.inputA].primal)
+        nodes[node.inputA].adjoint += a / (c * c)
+        break
+      }
+
+      case OpKind.Asin: {
+        const xp = nodes[node.inputA].primal
+        nodes[node.inputA].adjoint += a / Math.sqrt(1 - xp * xp)
+        break
+      }
+
+      case OpKind.Acos: {
+        const xp = nodes[node.inputA].primal
+        nodes[node.inputA].adjoint += -a / Math.sqrt(1 - xp * xp)
+        break
+      }
+
+      case OpKind.Atan: {
+        const xp = nodes[node.inputA].primal
+        nodes[node.inputA].adjoint += a / (1 + xp * xp)
+        break
+      }
+
+      case OpKind.Atan2: {
+        const yp = nodes[node.inputA].primal
+        const xp = nodes[node.inputB].primal
+        const r2 = xp * xp + yp * yp
+        nodes[node.inputA].adjoint += a * xp / r2
+        nodes[node.inputB].adjoint += a * -yp / r2
         break
       }
 

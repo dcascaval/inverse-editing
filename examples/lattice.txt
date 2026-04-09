@@ -1,0 +1,31 @@
+// Perforated plate: a rectangular plate with a grid of
+// polygonal holes. As holeR grows, adjacent holes merge
+// and the plate transitions from solid-with-holes to a
+// thin lattice web, then to disconnected islands.
+
+parameters {
+  cols: 5
+  rows: 4
+  cellSize: 8
+  holeR: 1 < 3 < 4.5
+  holeSides: 6
+}
+
+pad = 2
+pw = cols * cellSize + 2 * pad
+ph = rows * cellSize + 2 * pad
+plate = rect(-pad, -pad, pw, ph)
+
+holes = tabulate(cols * rows, i => {
+  col = i % cols
+  row = (i - col) / cols
+  cx = col * cellSize + cellSize / 2
+  cy = row * cellSize + cellSize / 2
+  polygon(pt(cx, cy), holeSides, holeR)
+})
+
+allHoles = unionAll(holes)
+punched = difference(plate, allHoles)
+
+draw(punched, translucent(0.15))
+draw(punched.edges, color(gray))

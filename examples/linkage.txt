@@ -1,0 +1,81 @@
+// Four-bar linkage mechanism.
+// Ground link AB is fixed. Crank (link 1) rotates around A.
+// Coupler (link 2) connects crank tip to rocker tip.
+// Rocker (link 3) pivots around B.
+// A coupler-mounted rectangular tool plate sweeps an arc
+// whose shape depends on the link lengths.
+
+parameters {
+  ground: 20
+  crank: 5 < 8 < 12
+  coupler: 12 < 16 < 22
+  rocker: 8 < 12 < 18
+  crankAngle: 0 < 45 < 360
+  plateW: 4
+  plateH: 3
+}
+
+// Fixed pivots
+ax = 0;  ay = 0
+bx = ground; by = 0
+
+// Crank tip P
+theta1 = crankAngle * PI / 180
+px = ax + crank * cos(theta1)
+py = ay + crank * sin(theta1)
+
+// Solve for rocker angle using law of cosines
+// Distance from B to P
+dpx = px - bx; dpy = py - by
+d = sqrt(dpx*dpx + dpy*dpy)
+
+// Angle of BP line
+alpha = atan2(dpy, dpx)
+
+// Law of cosines: cos(beta) = (d^2 + rocker^2 - coupler^2) / (2*d*rocker)
+cosB = (d*d + rocker*rocker - coupler*coupler) / (2 * d * rocker)
+beta = acos(cosB)
+theta3 = alpha + beta
+
+// Rocker tip Q
+qx = bx + rocker * cos(theta3)
+qy = by + rocker * sin(theta3)
+
+// Draw the links as rectangles with some thickness
+linkThk = 1.5
+
+// Crank: A to P
+crankLink = rect(-0.5, -linkThk/2, crank + 1, linkThk)
+  .rotate(crankAngle)
+
+// Rocker: B to Q
+rockerAngleDeg = theta3 * 180 / PI
+rockerLink = rect(-0.5, -linkThk/2, rocker + 1, linkThk)
+  .rotate(rockerAngleDeg)
+  .translate(bx, by)
+
+// Coupler: P to Q
+couplerDx = qx - px; couplerDy = qy - py
+couplerAngle = atan2(couplerDy, couplerDx) * 180 / PI
+couplerLen = sqrt(couplerDx*couplerDx + couplerDy*couplerDy)
+couplerLink = rect(-0.5, -linkThk/2, couplerLen + 1, linkThk)
+  .rotate(couplerAngle)
+  .translate(px, py)
+
+// Coupler plate (tool) — mounted at midpoint of coupler
+mpx = (px + qx) / 2; mpy = (py + qy) / 2
+plate = rect(-plateW/2, -plateH/2, plateW, plateH)
+  .rotate(couplerAngle)
+  .translate(mpx, mpy)
+
+// Pivot pins
+pinA = polygon(pt(ax, ay), 12, 1.5)
+pinB = polygon(pt(bx, by), 12, 1.5)
+pinP = polygon(pt(px, py), 8, 1)
+pinQ = polygon(pt(qx, qy), 8, 1)
+
+draw(crankLink, rockerLink, couplerLink, dashed)
+draw(plate, translucent(0.25))
+draw(plate.edges, color(blue))
+draw(pinA, pinB, color(red))
+draw(pinP, pinQ, color(orange))

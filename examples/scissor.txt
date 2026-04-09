@@ -1,0 +1,44 @@
+// Scissor linkage: two beams cross at a pivot point.
+// As the opening angle changes, the intersection region
+// morphs from a long thin diamond to a wide squat one,
+// and the overall silhouette transitions between an X
+// and a narrow V. Chamfered corners round the tips.
+
+parameters {
+  beamL: 20 < 30 < 40
+  beamW: 3 < 5 < 8
+  halfAngle: 5 < 25 < 85
+  pivotY: 0 < 0.3 < 1
+  chmf: 0 < 1.5 < 4
+}
+
+// Pivot location along the beam length (0 = center, 1 = end)
+pivotOffset = pivotY * beamL / 2
+
+// Right beam: centered at origin, rotated by +halfAngle
+r = rect(-beamL/2, -beamW/2, beamL, beamW)
+beamR = r.translate(pivotOffset, 0).rotate(halfAngle)
+
+// Left beam: mirrored
+beamL2 = beamR.mirror(pt(0,0), pt(0,1))
+
+// The intersection diamond — the overlap zone
+diamond = intersection(beamR, beamL2)
+
+// Full silhouette
+silhouette = union(beamR, beamL2)
+
+// Chamfer the tips of the silhouette
+tipQuery = (from(r.topLeft) or from(r.bottomLeft) or from(r.topRight) or from(r.bottomRight))
+tips = query(silhouette.points, tipQuery)
+chamfered = chamfer(silhouette.single(), tips, chmf)
+
+// Pivot pin
+pin = polygon(pt(0, 0), 12, beamW / 3)
+
+draw(beamR, beamL2, dashed)
+draw(chamfered, translucent(0.2))
+draw(chamfered.edges, color(gray))
+draw(diamond, translucent(0.3))
+draw(diamond.edges, color(red))
+draw(pin, color(orange))
