@@ -35,7 +35,13 @@ function BatchPolygons({ batch }: { batch: DrawBatch }) {
   )
 }
 
-function BatchFaces3({ batch }: { batch: DrawBatch }) {
+function BatchFaces3({
+  batch,
+  onFaceDrag,
+}: {
+  batch: DrawBatch
+  onFaceDrag?: (e: ThreeEvent<PointerEvent>) => void
+}) {
   const { quads3, planarFaces3, style } = batch
   const quadGeo = useMemo(() => quads3ToGeometry(quads3), [quads3])
   const planarMeshes = useMemo(() => buildPlanarFaceMeshes(planarFaces3), [planarFaces3])
@@ -43,15 +49,21 @@ function BatchFaces3({ batch }: { batch: DrawBatch }) {
   const fill = style.fill ?? '#e4e4e7'
   const opacity = (style.opacity ?? 1) * 0.35;
 
+  const hoverHandlers = onFaceDrag ? {
+    onPointerEnter: () => { document.body.style.cursor = 'grab' },
+    onPointerLeave: () => { document.body.style.cursor = '' },
+    onPointerDown: onFaceDrag,
+  } : {}
+
   return (
     <>
       {quadGeo && (
-        <mesh geometry={quadGeo}>
+        <mesh geometry={quadGeo} {...hoverHandlers}>
           <meshBasicMaterial color={fill} transparent depthWrite={false} opacity={opacity} side={THREE.DoubleSide} />
         </mesh>
       )}
       {planarMeshes.map((m, i) => (
-        <mesh key={i} geometry={m.geometry} matrixAutoUpdate={false} matrix={m.matrix}>
+        <mesh key={i} geometry={m.geometry} matrixAutoUpdate={false} matrix={m.matrix} {...hoverHandlers}>
           <meshBasicMaterial color={fill} transparent depthWrite={false} opacity={opacity} side={THREE.DoubleSide} />
         </mesh>
       ))}
@@ -319,6 +331,7 @@ function DraggableBatches({
 }) {
   const scene = useStore((s) => s.scene)
   const sessionRef = useRef<DragSession | null>(null)
+  const dragPlaneZRef = useRef(0)
 
   const { onDrag } = useSceneDragDrop(
     // onStart: find closest edge at intersection point, build session
@@ -328,6 +341,8 @@ function DraggableBatches({
 
       const allEdges = useStore.getState().scene.filter((b) => !b.style.dashed).flatMap((b) => b.edges)
       const pt = e.point
+      // Set drag plane z from the 3D intersection (for vertical face drags)
+      dragPlaneZRef.current = pt.z ?? 0
       const hit = findClosestEdge(allEdges, pt.x, pt.y)
       if (!hit) return
 
@@ -354,6 +369,7 @@ function DraggableBatches({
       setOptPoint(null)
       useStore.getState().setDragActiveLockKeys(new Set())
     },
+    dragPlaneZRef,
   )
 
   return (
@@ -361,7 +377,7 @@ function DraggableBatches({
       {scene.map((batch, i) => (
         <group key={i} renderOrder={i}>
           <BatchPolygons batch={batch} />
-          <BatchFaces3 batch={batch} />
+          <BatchFaces3 batch={batch} onFaceDrag={batch.style.dashed ? undefined : onDrag} />
           <BatchEdges batch={batch} onEdgeDrag={batch.style.dashed ? undefined : onDrag} />
           <BatchPoints batch={batch} />
         </group>

@@ -20,8 +20,20 @@ export function syncSliders(program: Program) {
   const sliders: Slider[] = program.parameters.parameters.map((p) => {
     const { min: pMin, mid, max: pMax } = p.bounds
     const explicit = pMin !== mid || pMax !== mid
-    const min = explicit ? pMin : 1
-    const max = explicit ? pMax : upperBound(mid)
+    let min: number, max: number
+    if (explicit) {
+      min = pMin
+      max = pMax
+    } else if (mid < 0) {
+      min = -upperBound(mid)
+      max = 0
+    } else if (mid < 1) {
+      min = 0
+      max = Math.max(1, upperBound(mid))
+    } else {
+      min = 1
+      max = upperBound(mid)
+    }
     const step = (max - min) / 100 || 0.01
 
     const prev = existing.find((s) => s.name === p.name)

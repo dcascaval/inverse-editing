@@ -108,11 +108,12 @@ const _ndcVec = new THREE.Vector2()
 const _planeXY = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
 const _intersection = new THREE.Vector3()
 
-/** Convert screen-relative point [clientX, clientY] to world XY by raycasting onto the z=0 plane. */
+/** Convert screen-relative point [clientX, clientY] to world XY by raycasting onto a z=planeZ plane. */
 function screenToWorld(
   clientX: number, clientY: number,
   camera: THREE.Camera,
   canvas: HTMLCanvasElement,
+  planeZ: number = 0,
 ): Point2 {
   const rect = canvas.getBoundingClientRect()
   _ndcVec.set(
@@ -120,6 +121,7 @@ function screenToWorld(
     -((clientY - rect.top) / rect.height) * 2 + 1,
   )
   _raycaster.setFromCamera(_ndcVec, camera)
+  _planeXY.constant = -planeZ
   const hit = _raycaster.ray.intersectPlane(_planeXY, _intersection)
   if (hit) return [hit.x, hit.y]
   // Fallback: should not happen unless camera is parallel to the plane
@@ -136,20 +138,26 @@ export function useSceneDragDrop(
   onSceneStart: (worldPt: Point2, e: ThreeEvent<PointerEvent>) => void,
   onSceneUpdate: (worldPt: Point2) => void,
   onSceneComplete: () => void,
+  /** When set, subsequent mouse moves raycast onto z=this value instead of z=0.
+   *  Allows dragging on vertical 3D faces at the correct depth. */
+  dragPlaneZRef?: React.MutableRefObject<number>,
 ) {
   const camera = useThree((s) => s.camera)
   const canvas = useThree((s) => s.gl.domElement)
 
   const { onDrag, isDragging } = useScreenDragDrop<ThreeEvent<PointerEvent>>(
     (initial, e) => {
-      const world = screenToWorld(initial[0], initial[1], camera, canvas)
+      const planeZ = dragPlaneZRef?.current ?? 0
+      const world = screenToWorld(initial[0], initial[1], camera, canvas, planeZ)
       onSceneStart(world, e)
     },
     (_initial, current) => {
-      const world = screenToWorld(current[0], current[1], camera, canvas)
+      const planeZ = dragPlaneZRef?.current ?? 0
+      const world = screenToWorld(current[0], current[1], camera, canvas, planeZ)
       onSceneUpdate(world)
     },
     () => {
+      if (dragPlaneZRef) dragPlaneZRef.current = 0
       onSceneComplete()
     },
   )
