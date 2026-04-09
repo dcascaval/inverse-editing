@@ -13,7 +13,7 @@ import { rerunProgram } from '@/execute'
 
 
 /* Base regularization weight */
-const LAMBDA = 0.5;
+const LAMBDA = 1.0;
 
 /** Use log-sum (concave, sparsity-inducing) vs standard L1 regularization */
 const USE_LOG_SUM_REG = false;

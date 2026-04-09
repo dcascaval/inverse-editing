@@ -18,7 +18,6 @@ import { pointInPolygon } from '@/geometry/polygon'
 
 
 const EPS = 1e-10
-const SNAP = 1e-9
 const MATCH_EPS = 1e-6
 const SEG_TOL = 1e-6
 const SEG_TOL_SQ = SEG_TOL * SEG_TOL
@@ -27,97 +26,71 @@ const SEG_TOL_SQ = SEG_TOL * SEG_TOL
 // ---- Internal types ----
 
 
-type Vec2 = { x: number; y: number }
-
-type VertexOrigin = {
-  sourcePoints: Point2Val[]
-  sourceEdges: Edge2Val[]
-}
-
-type Vertex = Vec2 & {
-  id: number
-  nx: NumericValue
-  ny: NumericValue
-  origin: VertexOrigin
-}
+type NVec2 = { x: NumericValue; y: NumericValue }
 
 type SubEdge = {
-  startId: number
-  endId: number
+  start: Point2Val
+  end: Point2Val
   srcEdge: Edge2Val
   srcPoly: 0 | 1
 }
 
-
-// ---- Vertex pool ----
-
-
-class VertexPool {
-  private verts: Vertex[] = []
-
-  getOrCreate(x: number, y: number, nx: NumericValue, ny: NumericValue): Vertex {
-    const sx = Math.round(x / SNAP) * SNAP
-    const sy = Math.round(y / SNAP) * SNAP
-    for (const v of this.verts) {
-      if (Math.abs(v.x - sx) < MATCH_EPS && Math.abs(v.y - sy) < MATCH_EPS) return v
-    }
-    const v: Vertex = {
-      x: sx, y: sy, nx, ny, id: this.verts.length,
-      origin: { sourcePoints: [], sourceEdges: [] },
-    }
-    this.verts.push(v)
-    return v
-  }
-
-  get(id: number): Vertex { return this.verts[id] }
+type PolyData = {
+  points: Point2Val[]
+  edges: Edge2Val[]
 }
 
 
-// ---- Geometry utilities (plain numbers for decisions) ----
+// ---- Geometry utilities ----
 
 
-function dist2(a: Vec2, b: Vec2): number {
-  const dx = a.x - b.x, dy = a.y - b.y
-  return dx * dx + dy * dy
+function xn(p: NVec2): number { return p.x.toNumber() }
+function yn(p: NVec2): number { return p.y.toNumber() }
+
+function toPlain(p: NVec2): { x: number; y: number } {
+  return { x: xn(p), y: yn(p) }
 }
 
-/** Parameter t such that projection of pt onto line a→b is a + t*(b-a). */
-function closestParameter(a: Vec2, b: Vec2, pt: Vec2): number {
-  const dx = b.x - a.x, dy = b.y - a.y
+function samePoint(a: NVec2, b: NVec2): boolean {
+  return Math.abs(xn(a) - xn(b)) < MATCH_EPS && Math.abs(yn(a) - yn(b)) < MATCH_EPS
+}
+
+/** Parameter t such that projection of pt onto line a->b is a + t*(b-a). */
+function closestParameter(a: NVec2, b: NVec2, pt: NVec2): number {
+  const ax = xn(a), ay = yn(a)
+  const dx = xn(b) - ax, dy = yn(b) - ay
   const len2 = dx * dx + dy * dy
   if (len2 < EPS * EPS) return 0
-  return ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / len2
+  return ((xn(pt) - ax) * dx + (yn(pt) - ay) * dy) / len2
 }
 
-function signedArea2(pts: Vec2[]): number {
+function signedArea2(pts: NVec2[]): number {
   let sum = 0
   const n = pts.length
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n
-    sum += pts[i].x * pts[j].y - pts[j].x * pts[i].y
+    sum += xn(pts[i]) * yn(pts[j]) - xn(pts[j]) * yn(pts[i])
   }
   return sum
 }
 
 /** Check if polygon `outer` fully contains polygon `inner`. */
-function polyContainsPoly(outer: Vec2[], inner: Vec2[]): boolean {
-  return pointInPolygon(inner[0], outer) && pointInPolygon(inner[1], outer)
+function polyContainsPoly(outer: NVec2[], inner: NVec2[]): boolean {
+  const outerPlain = outer.map(toPlain)
+  return pointInPolygon(toPlain(inner[0]), outerPlain)
+      && pointInPolygon(toPlain(inner[1]), outerPlain)
 }
 
 
-// ---- NumericValue interpolation helpers ----
+// ---- NumericValue interpolation ----
 
 
 /** Interpolate between two NumericValue points: a + t * (b - a) */
-function lerpNV(
-  ax: NumericValue, ay: NumericValue,
-  bx: NumericValue, by: NumericValue,
-  t: number, tape?: Tape | null,
-): { nx: NumericValue; ny: NumericValue } {
+function lerpNV(a: NVec2, b: NVec2, t: number, tape?: Tape | null): NVec2 {
   const tNV = nv(t, tape)
   return {
-    nx: ax.add(bx.sub(ax).mul(tNV)),
-    ny: ay.add(by.sub(ay).mul(tNV)),
+    x: a.x.add(b.x.sub(a.x).mul(tNV)),
+    y: a.y.add(b.y.sub(a.y).mul(tNV)),
   }
 }
 
@@ -132,9 +105,14 @@ type Intersection = {
   tB: number
 }
 
-function segSegIntersect(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2): Intersection[] {
-  const dax = a2.x - a1.x, day = a2.y - a1.y
-  const dbx = b2.x - b1.x, dby = b2.y - b1.y
+function segSegIntersect(a1: NVec2, a2: NVec2, b1: NVec2, b2: NVec2): Intersection[] {
+  const a1x = xn(a1), a1y = yn(a1)
+  const a2x = xn(a2), a2y = yn(a2)
+  const b1x = xn(b1), b1y = yn(b1)
+  const b2x = xn(b2), b2y = yn(b2)
+
+  const dax = a2x - a1x, day = a2y - a1y
+  const dbx = b2x - b1x, dby = b2y - b1y
   const cross = dax * dby - day * dbx
 
   const lenA = Math.sqrt(dax * dax + day * day)
@@ -148,137 +126,157 @@ function segSegIntersect(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2): Intersection[]
     const result: Intersection[] = []
 
     function addIntervalPoint(
-      segStart: Vec2, segEnd: Vec2, pt: Vec2,
+      sx: number, sy: number, ex: number, ey: number,
+      ptx: number, pty: number,
       isFromA: boolean, isEnd: boolean,
     ) {
-      const t = closestParameter(segStart, segEnd, pt)
-      const proj = {
-        x: segStart.x + t * (segEnd.x - segStart.x),
-        y: segStart.y + t * (segEnd.y - segStart.y),
-      }
-      if (dist2(proj, pt) > SEG_TOL_SQ) return
+      const dx = ex - sx, dy = ey - sy
+      const len2 = dx * dx + dy * dy
+      const t = len2 < EPS * EPS ? 0 : ((ptx - sx) * dx + (pty - sy) * dy) / len2
+      const projx = sx + t * dx, projy = sy + t * dy
+      const pdx = projx - ptx, pdy = projy - pty
+      if (pdx * pdx + pdy * pdy > SEG_TOL_SQ) return
       const constParam = isEnd ? 1.0 : 0.0
       const tA = isFromA ? constParam : t
       const tB = isFromA ? t : constParam
       if (tA >= -SEG_TOL && tA <= 1 + SEG_TOL && tB >= -SEG_TOL && tB <= 1 + SEG_TOL) {
         result.push({
-          x: pt.x, y: pt.y,
+          x: ptx, y: pty,
           tA: Math.max(0, Math.min(1, tA)),
           tB: Math.max(0, Math.min(1, tB)),
         })
       }
     }
 
-    addIntervalPoint(b1, b2, a1, true, false)
-    addIntervalPoint(b1, b2, a2, true, true)
-    addIntervalPoint(a1, a2, b1, false, false)
-    addIntervalPoint(a1, a2, b2, false, true)
+    addIntervalPoint(b1x, b1y, b2x, b2y, a1x, a1y, true, false)
+    addIntervalPoint(b1x, b1y, b2x, b2y, a2x, a2y, true, true)
+    addIntervalPoint(a1x, a1y, a2x, a2y, b1x, b1y, false, false)
+    addIntervalPoint(a1x, a1y, a2x, a2y, b2x, b2y, false, true)
 
     return result
   }
 
   // ---- Non-parallel case ----
-  const t = ((b1.x - a1.x) * dby - (b1.y - a1.y) * dbx) / cross
-  const u = ((b1.x - a1.x) * day - (b1.y - a1.y) * dax) / cross
+  const t = ((b1x - a1x) * dby - (b1y - a1y) * dbx) / cross
+  const u = ((b1x - a1x) * day - (b1y - a1y) * dax) / cross
   if (t < -SEG_TOL || t > 1 + SEG_TOL || u < -SEG_TOL || u > 1 + SEG_TOL) return []
   const tc = Math.max(0, Math.min(1, t))
   const uc = Math.max(0, Math.min(1, u))
   return [{
-    x: a1.x + tc * dax,
-    y: a1.y + tc * day,
+    x: a1x + tc * dax,
+    y: a1y + tc * day,
     tA: tc,
     tB: uc,
   }]
 }
 
 
-// ---- Edge shattering ----
+// ---- Intersection finding (like Scala allIntersections) ----
 
 
-type ShatterResult = {
-  subEdges: SubEdge[]
-  foundIntersections: boolean
-}
+type EdgeIntersection = { point: Point2Val; param: number }
 
-function shatterPolygon(
-  pts: Vec2[], npts: { nx: NumericValue; ny: NumericValue }[],
-  edges: Edge2Val[], polyId: 0 | 1,
-  otherPts: Vec2[], otherNPts: { nx: NumericValue; ny: NumericValue }[],
-  otherEdges: Edge2Val[],
-  pool: VertexPool, tape?: Tape | null,
-): ShatterResult {
-  const n = pts.length
-  const result: SubEdge[] = []
-  let foundIntersections = false
+function findAllIntersections(
+  polyA: PolyData, polyB: PolyData,
+  g: LineageGraph, tape?: Tape | null,
+): { ixMap: Map<Edge2Val, EdgeIntersection[]>; hasIntersections: boolean } {
+  const ixMap = new Map<Edge2Val, EdgeIntersection[]>()
+  let hasIntersections = false
 
-  for (let i = 0; i < n; i++) {
-    const p0 = pts[i]
-    const p1 = pts[(i + 1) % n]
-    const np0 = npts[i]
-    const np1 = npts[(i + 1) % n]
-    const srcEdge = edges[i]
+  for (let i = 0; i < polyA.edges.length; i++) {
+    const aEdge = polyA.edges[i]
+    const a0 = polyA.points[i], a1 = polyA.points[(i + 1) % polyA.points.length]
 
-    const splits: { t: number; vertex: Vertex }[] = []
+    for (let j = 0; j < polyB.edges.length; j++) {
+      const bEdge = polyB.edges[j]
+      const b0 = polyB.points[j], b1 = polyB.points[(j + 1) % polyB.points.length]
 
-    const m = otherPts.length
-    for (let j = 0; j < m; j++) {
-      const q0 = otherPts[j]
-      const q1 = otherPts[(j + 1) % m]
-      const ixs = segSegIntersect(p0, p1, q0, q1)
+      for (const ix of segSegIntersect(a0, a1, b0, b1)) {
+        hasIntersections = true
 
-      for (const ix of ixs) {
-        foundIntersections = true
-        if (ix.tA < EPS || ix.tA > 1 - EPS) continue
+        // Create intersection point via lerp on A's edge, apply lineage from both edges
+        const lerped = lerpNV(a0, a1, ix.tA, tape)
+        const pt = createPoint(lerped.x, lerped.y)
+        g.direct(aEdge, pt)
+        g.direct(bEdge, pt)
 
-        // Interpolate in NumericValue space
-        const { nx, ny } = lerpNV(np0.nx, np0.ny, np1.nx, np1.ny, ix.tA, tape)
-        const v = pool.getOrCreate(ix.x, ix.y, nx, ny)
-        v.origin.sourceEdges.push(srcEdge, otherEdges[j])
-        splits.push({ t: ix.tA, vertex: v })
+        let aList = ixMap.get(aEdge)
+        if (!aList) { aList = []; ixMap.set(aEdge, aList) }
+        aList.push({ point: pt, param: ix.tA })
+
+        let bList = ixMap.get(bEdge)
+        if (!bList) { bList = []; ixMap.set(bEdge, bList) }
+        bList.push({ point: pt, param: ix.tB })
       }
-    }
-
-    splits.sort((a, b) => a.t - b.t)
-    const unique: typeof splits = []
-    for (const s of splits) {
-      if (unique.length > 0 && unique[unique.length - 1].vertex.id === s.vertex.id) continue
-      unique.push(s)
-    }
-
-    const startV = pool.getOrCreate(p0.x, p0.y, np0.nx, np0.ny)
-    const endV = pool.getOrCreate(p1.x, p1.y, np1.nx, np1.ny)
-
-    if (unique.length === 0) {
-      result.push({ startId: startV.id, endId: endV.id, srcEdge, srcPoly: polyId })
-    } else {
-      let prevId = startV.id
-      for (const s of unique) {
-        result.push({ startId: prevId, endId: s.vertex.id, srcEdge, srcPoly: polyId })
-        prevId = s.vertex.id
-      }
-      result.push({ startId: prevId, endId: endV.id, srcEdge, srcPoly: polyId })
     }
   }
 
-  return { subEdges: result, foundIntersections }
+  return { ixMap, hasIntersections }
 }
 
 
-// ---- Edge deduplication ----
+// ---- Edge splitting (like Scala splitPolyWithIntersections) ----
 
+
+function splitPoly(
+  poly: PolyData, polyId: 0 | 1,
+  ixMap: Map<Edge2Val, EdgeIntersection[]>,
+  g: LineageGraph,
+): SubEdge[] {
+  const result: SubEdge[] = []
+  const n = poly.points.length
+
+  for (let i = 0; i < n; i++) {
+    const p0 = poly.points[i]
+    const p1 = poly.points[(i + 1) % n]
+    const srcEdge = poly.edges[i]
+
+    const ixs = (ixMap.get(srcEdge) || [])
+      .filter((ix) => ix.param > EPS && ix.param < 1 - EPS)
+    ixs.sort((a, b) => a.param - b.param)
+
+    // Dedup by proximity
+    const unique: EdgeIntersection[] = []
+    for (const ix of ixs) {
+      if (unique.length > 0 && samePoint(unique[unique.length - 1].point, ix.point)) continue
+      unique.push(ix)
+    }
+
+    // Create sub-edges
+    let prev = p0
+    for (const ix of unique) {
+      result.push({ start: prev, end: ix.point, srcEdge, srcPoly: polyId })
+      prev = ix.point
+    }
+    result.push({ start: prev, end: p1, srcEdge, srcPoly: polyId })
+  }
+
+  return result
+}
+
+
+// ---- Edge deduplication and filtering ----
+
+
+function sameEdge(a: SubEdge, b: SubEdge): boolean {
+  return samePoint(a.start, b.start) && samePoint(a.end, b.end)
+}
+
+function reverseOfEdge(a: SubEdge, b: SubEdge): boolean {
+  return samePoint(a.start, b.end) && samePoint(a.end, b.start)
+}
 
 function deduplicateAndFilter(
   subEdgesA: SubEdge[], subEdgesB: SubEdge[],
-  pool: VertexPool,
-  polyA: Vec2[], polyB: Vec2[],
+  polyA: PolyData, polyB: PolyData,
   op: BooleanOp,
+  g: LineageGraph,
 ): SubEdge[] {
   const edgesOnBoth: SubEdge[] = []
   let allEdges: SubEdge[] = []
 
   function insert(edge: SubEdge) {
-    const eqIdx = allEdges.findIndex((e) =>
-      e.startId === edge.startId && e.endId === edge.endId)
+    const eqIdx = allEdges.findIndex((e) => sameEdge(e, edge))
     if (eqIdx >= 0) {
       const matched = allEdges[eqIdx]
       allEdges.splice(eqIdx, 1)
@@ -289,8 +287,7 @@ function deduplicateAndFilter(
       }
     }
 
-    const revIdx = allEdges.findIndex((e) =>
-      e.startId === edge.endId && e.endId === edge.startId)
+    const revIdx = allEdges.findIndex((e) => reverseOfEdge(e, edge))
     if (revIdx >= 0) {
       const matched = allEdges[revIdx]
       allEdges.splice(revIdx, 1)
@@ -307,18 +304,22 @@ function deduplicateAndFilter(
   for (const e of subEdgesA) insert(e)
   for (const e of subEdgesB) insert(e)
 
+  const polyAPlain = polyA.points.map(toPlain)
+  const polyBPlain = polyB.points.map(toPlain)
+
   const filtered: SubEdge[] = []
   for (const e of allEdges) {
-    const s = pool.get(e.startId)
-    const t = pool.get(e.endId)
-    const mid: Vec2 = { x: (s.x + t.x) / 2, y: (s.y + t.y) / 2 }
+    const mid = {
+      x: (xn(e.start) + xn(e.end)) / 2,
+      y: (yn(e.start) + yn(e.end)) / 2,
+    }
 
     let keep: boolean
     if (e.srcPoly === 0) {
-      const inB = pointInPolygon(mid, polyB)
+      const inB = pointInPolygon(mid, polyBPlain)
       keep = (op === 'intersection') ? inB : !inB
     } else {
-      const inA = pointInPolygon(mid, polyA)
+      const inA = pointInPolygon(mid, polyAPlain)
       keep = (op === 'union') ? !inA : inA
     }
 
@@ -329,7 +330,8 @@ function deduplicateAndFilter(
 
   return filtered.map((e) => {
     if (op === 'difference' && e.srcPoly === 1) {
-      return { startId: e.endId, endId: e.startId, srcEdge: e.srcEdge, srcPoly: e.srcPoly }
+      const flipped: SubEdge = { start: e.end, end: e.start, srcEdge: e.srcEdge, srcPoly: e.srcPoly }
+      return flipped
     }
     return e
   })
@@ -339,65 +341,56 @@ function deduplicateAndFilter(
 // ---- Graph reconstruction ----
 
 
-type Loop = {
-  vertexIds: number[]
-  subEdges: SubEdge[]
-}
-
-function reconstructLoops(edges: SubEdge[], pool: VertexPool): Loop[] {
+function reconstructLoops(edges: SubEdge[]): SubEdge[][] {
   if (edges.length === 0) return []
 
-  const adj = new Map<number, { endId: number; idx: number; angle: number }[]>()
-  for (let i = 0; i < edges.length; i++) {
-    const e = edges[i]
-    const s = pool.get(e.startId)
-    const t = pool.get(e.endId)
-    const angle = Math.atan2(t.y - s.y, t.x - s.x) + Math.PI
-    let list = adj.get(e.startId)
-    if (!list) { list = []; adj.set(e.startId, list) }
-    list.push({ endId: e.endId, idx: i, angle })
-  }
-
-  for (const list of adj.values()) {
-    list.sort((a, b) => a.angle - b.angle)
-  }
+  // Precompute adjacency: adj[i] = edges whose start matches edges[i].end
+  const adj: { idx: number; angle: number }[][] = edges.map((e) => {
+    const result: { idx: number; angle: number }[] = []
+    for (let j = 0; j < edges.length; j++) {
+      if (samePoint(edges[j].start, e.end)) {
+        const angle = Math.atan2(
+          yn(edges[j].end) - yn(edges[j].start),
+          xn(edges[j].end) - xn(edges[j].start),
+        ) + Math.PI
+        result.push({ idx: j, angle })
+      }
+    }
+    result.sort((a, b) => a.angle - b.angle)
+    return result
+  })
 
   const unvisited = new Set<number>()
   for (let i = 0; i < edges.length; i++) unvisited.add(i)
 
-  const loops: Loop[] = []
+  const loops: SubEdge[][] = []
 
   while (unvisited.size > 0) {
+    // Prefer starting at a vertex with only one live outgoing edge
     let startIdx: number | undefined
     for (const idx of unvisited) {
-      const outgoing = adj.get(edges[idx].startId)
-      const liveCount = outgoing ? outgoing.filter((e) => unvisited.has(e.idx)).length : 0
+      const liveCount = adj[idx].filter((e) => unvisited.has(e.idx)).length
       if (liveCount === 1) { startIdx = idx; break }
     }
     if (startIdx === undefined) {
       startIdx = unvisited.values().next().value!
     }
 
-    const loop: Loop = { vertexIds: [], subEdges: [] }
+    const loop: SubEdge[] = []
     let currentIdx = startIdx
-    const startVertexId = edges[startIdx].startId
+    const startPt = edges[startIdx].start
 
     while (true) {
       unvisited.delete(currentIdx)
       const e = edges[currentIdx]
-      loop.vertexIds.push(e.startId)
-      loop.subEdges.push(e)
+      loop.push(e)
 
-      if (e.endId === startVertexId) break
+      if (samePoint(e.end, startPt)) break
 
-      const outgoing = adj.get(e.endId)
-      if (!outgoing) break
+      const outgoing = adj[currentIdx]
 
       const incomingAngle = (
-        Math.atan2(
-          pool.get(e.startId).y - pool.get(e.endId).y,
-          pool.get(e.startId).x - pool.get(e.endId).x,
-        ) + Math.PI
+        Math.atan2(yn(e.start) - yn(e.end), xn(e.start) - xn(e.end)) + Math.PI
       )
 
       let bestIdx = -1
@@ -422,8 +415,7 @@ function reconstructLoops(edges: SubEdge[], pool: VertexPool): Loop[] {
       currentIdx = nextIdx
     }
 
-    if (loop.vertexIds.length >= 3 &&
-        loop.subEdges[loop.subEdges.length - 1].endId === startVertexId) {
+    if (loop.length >= 3 && samePoint(loop[loop.length - 1].end, startPt)) {
       loops.push(loop)
     }
   }
@@ -435,64 +427,53 @@ function reconstructLoops(edges: SubEdge[], pool: VertexPool): Loop[] {
 // ---- Collinear merging ----
 
 
-function isCollinear(pool: VertexPool, a: SubEdge, b: SubEdge): boolean {
-  const a0 = pool.get(a.startId), a1 = pool.get(a.endId)
-  const b0 = pool.get(b.startId), b1 = pool.get(b.endId)
-  const dax = a1.x - a0.x, day = a1.y - a0.y
-  const dbx = b1.x - b0.x, dby = b1.y - b0.y
+function isCollinear(a: SubEdge, b: SubEdge): boolean {
+  const dax = xn(a.end) - xn(a.start), day = yn(a.end) - yn(a.start)
+  const dbx = xn(b.end) - xn(b.start), dby = yn(b.end) - yn(b.start)
   return Math.abs(dax * dby - day * dbx) < EPS
 }
 
-function mergeCollinearEdges(loop: Loop, pool: VertexPool): Loop {
-  if (loop.vertexIds.length <= 3) return loop
+function mergeCollinearEdges(loop: SubEdge[], g: LineageGraph): SubEdge[] {
+  if (loop.length <= 3) return loop
 
-  const n = loop.vertexIds.length
-  const merged: { vertexId: number; subEdge: SubEdge; mergedFrom: SubEdge[] }[] = []
+  const merged: { subEdge: SubEdge; mergedFrom: SubEdge[] }[] = []
 
-  for (let i = 0; i < n; i++) {
-    const e = loop.subEdges[i]
-    if (merged.length > 0 && isCollinear(pool, merged[merged.length - 1].subEdge, e)) {
+  for (const e of loop) {
+    if (merged.length > 0 && isCollinear(merged[merged.length - 1].subEdge, e)) {
       const prev = merged[merged.length - 1]
-      prev.subEdge = { ...prev.subEdge, endId: e.endId }
+      prev.subEdge = { ...prev.subEdge, end: e.end }
       prev.mergedFrom.push(e)
     } else {
-      merged.push({ vertexId: loop.vertexIds[i], subEdge: e, mergedFrom: [e] })
+      merged.push({ subEdge: e, mergedFrom: [e] })
     }
   }
 
-  if (merged.length > 1 && isCollinear(pool, merged[merged.length - 1].subEdge, merged[0].subEdge)) {
+  if (merged.length > 1 && isCollinear(merged[merged.length - 1].subEdge, merged[0].subEdge)) {
     const last = merged.pop()!
-    merged[0].subEdge = { ...merged[0].subEdge, startId: last.subEdge.startId }
-    merged[0].vertexId = last.vertexId
+    merged[0].subEdge = { ...merged[0].subEdge, start: last.subEdge.start }
     merged[0].mergedFrom = [...last.mergedFrom, ...merged[0].mergedFrom]
   }
 
-  return {
-    vertexIds: merged.map((m) => m.vertexId),
-    subEdges: merged.map((m) => m.subEdge),
-  }
+  return merged.map((m) => m.subEdge)
 }
 
 
 // ---- Output construction with lineage ----
 
 
-function buildOutputPolygon(
-  loop: Loop, preMergeEdges: SubEdge[],
-  pool: VertexPool, g: LineageGraph,
-): PolygonVal {
-  const points: Point2Val[] = loop.vertexIds.map((vid) => {
-    const v = pool.get(vid)
-    const pt = createPoint(v.nx, v.ny)
-    for (const sp of v.origin.sourcePoints) g.direct(sp, pt)
-    for (const se of v.origin.sourceEdges) g.direct(se, pt)
+function buildOutputPolygon(loop: SubEdge[], g: LineageGraph): PolygonVal {
+  // Copy points so each output polygon has its own Point2Val nodes in the lineage graph
+  const points: Point2Val[] = loop.map((e) => {
+    const pt = createPoint(e.start.x, e.start.y)
+    g.direct(e.start, pt)
     return pt
   })
 
   const poly = createPolygon(points, g)
 
-  for (let i = 0; i < loop.subEdges.length; i++) {
-    g.direct(loop.subEdges[i].srcEdge, poly.edges[i])
+  // Apply lineage from source edges
+  for (let i = 0; i < loop.length; i++) {
+    g.direct(loop[i].srcEdge, poly.edges[i])
   }
 
   return poly
@@ -502,23 +483,11 @@ function buildOutputPolygon(
 // ---- Extract polygon data from Value ----
 
 
-type PolyData = {
-  pts: Vec2[]
-  npts: { nx: NumericValue; ny: NumericValue }[]
-  points: Point2Val[]
-  edges: Edge2Val[]
-}
-
 function extractPoly(v: Value): PolyData {
   switch (v.type) {
     case 'rectangle':
     case 'polygon':
-      return {
-        pts: v.points.map((p) => ({ x: p.x.toNumber(), y: p.y.toNumber() })),
-        npts: v.points.map((p) => ({ nx: p.x, ny: p.y })),
-        points: v.points,
-        edges: v.edges,
-      }
+      return { points: v.points, edges: v.edges }
     default:
       throw new Error(`Cannot use ${v.type} in boolean operation`)
   }
@@ -535,33 +504,13 @@ export function booleanOperation(
 ): RegionVal {
   const polyA = extractPoly(a)
   const polyB = extractPoly(b)
-  const pool = new VertexPool()
 
-  // Seed vertex pool with original polygon vertices (with NumericValue coords)
-  for (let i = 0; i < polyA.points.length; i++) {
-    const pt = polyA.points[i]
-    pool.getOrCreate(pt.x.toNumber(), pt.y.toNumber(), pt.x, pt.y).origin.sourcePoints.push(pt)
-  }
-  for (let i = 0; i < polyB.points.length; i++) {
-    const pt = polyB.points[i]
-    pool.getOrCreate(pt.x.toNumber(), pt.y.toNumber(), pt.x, pt.y).origin.sourcePoints.push(pt)
-  }
-
-  // Shatter both polygons at intersection points
-  const resultA = shatterPolygon(
-    polyA.pts, polyA.npts, polyA.edges, 0,
-    polyB.pts, polyB.npts, polyB.edges, pool, tape,
-  )
-  const resultB = shatterPolygon(
-    polyB.pts, polyB.npts, polyB.edges, 1,
-    polyA.pts, polyA.npts, polyA.edges, pool, tape,
-  )
-
-  const hasIntersections = resultA.foundIntersections || resultB.foundIntersections
+  // Find all intersections, creating Point2Val with lineage inline
+  const { ixMap, hasIntersections } = findAllIntersections(polyA, polyB, g, tape)
 
   if (!hasIntersections) {
-    const aInB = polyContainsPoly(polyB.pts, polyA.pts)
-    const bInA = polyContainsPoly(polyA.pts, polyB.pts)
+    const aInB = polyContainsPoly(polyB.points, polyA.points)
+    const bInA = polyContainsPoly(polyA.points, polyB.points)
 
     switch (op) {
       case 'union':
@@ -579,23 +528,23 @@ export function booleanOperation(
     }
   }
 
-  // Full boolean pipeline
-  const finalEdges = deduplicateAndFilter(
-    resultA.subEdges, resultB.subEdges, pool, polyA.pts, polyB.pts, op,
-  )
+  // Split both polygons at intersection points
+  const splitA = splitPoly(polyA, 0, ixMap, g)
+  const splitB = splitPoly(polyB, 1, ixMap, g)
 
-  const loops = reconstructLoops(finalEdges, pool)
+  // Full boolean pipeline
+  const finalEdges = deduplicateAndFilter(splitA, splitB, polyA, polyB, op, g)
+
+  const loops = reconstructLoops(finalEdges)
 
   const positive: PolygonVal[] = []
   const negative: PolygonVal[] = []
 
   for (const loop of loops) {
-    const preMerge = [...loop.subEdges]
-    const merged = mergeCollinearEdges(loop, pool)
-    const poly = buildOutputPolygon(merged, preMerge, pool, g)
+    const merged = mergeCollinearEdges(loop, g)
+    const poly = buildOutputPolygon(merged, g)
 
-    const verts = merged.vertexIds.map((id) => pool.get(id))
-    const area = signedArea2(verts)
+    const area = signedArea2(merged.map((e) => e.start))
     if (area > EPS) positive.push(poly)
     else if (area < -EPS) negative.push(poly)
   }
@@ -654,7 +603,7 @@ function asRegion(poly: PolygonVal): RegionVal {
 }
 
 /**
- * Reverse a polygon's winding order (CW→CCW or CCW→CW).
+ * Reverse a polygon's winding order (CW->CCW or CCW->CW).
  * Negative polygons from boolean ops have CW winding; they must be reversed
  * to CCW before being used as inputs to booleanOperation.
  */
@@ -750,7 +699,7 @@ export function unionRegions(
     neg = result.negatives
   }
 
-  // Handle b's negatives (reverse CW→CCW for boolean ops):
+  // Handle b's negatives (reverse CW->CCW for boolean ops):
   // 1. Subtract a's positives from b's negatives (what remains is in b but not a)
   const aPosRegion: RegionVal = { type: 'region', positive: a.positive, negative: [] }
   const negSubPos: PolygonVal[] = []
@@ -860,7 +809,7 @@ export function intersectRegions(
 
   if (intersected.length === 0) return { type: 'region', positive: [], negative: [] }
 
-  // Subtract all negatives from both regions (reverse CW→CCW first)
+  // Subtract all negatives from both regions (reverse CW->CCW first)
   let result: RegionVal = { type: 'region', positive: intersected, negative: [] }
   for (const neg of [...a.negative, ...b.negative]) {
     const negCCW = reverseWinding(neg, g)

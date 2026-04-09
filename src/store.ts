@@ -53,6 +53,10 @@ type Store = {
   removeLock: (rootIndices: Set<number>) => void
   clearLocks: () => void
 
+  // Locks that were active at drag start (for displaying inert-during-drag locks)
+  dragActiveLockKeys: Set<string>
+  setDragActiveLockKeys: (v: Set<string>) => void
+
   // Error (not persisted)
   error: string | null
   setError: (error: string | null) => void
@@ -153,6 +157,9 @@ export const useStore = create<Store>()(
           }),
         })),
       clearLocks: () => set({ locks: [] }),
+
+      dragActiveLockKeys: new Set<string>(),
+      setDragActiveLockKeys: (dragActiveLockKeys) => set({ dragActiveLockKeys }),
 
       error: null,
       setError: (error) => set({ error }),

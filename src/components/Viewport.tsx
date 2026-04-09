@@ -8,7 +8,7 @@ import { useStore, type VertexLock } from '@/store'
 import type { DrawBatch, AnnotatedEdge2 } from '@/lang/interpreter'
 import { polygonsToGeometry, quads3ToGeometry, buildPlanarFaceMeshes } from '@/geometry/three'
 import { findClosestEdge, buildDragSession, optimizeDrag, collectVertices, type DragSession } from '@/optimize/drag'
-import { useSceneDragDrop2D } from '@/components/DragDrop'
+import { useSceneDragDrop } from '@/components/DragDrop'
 import type { Point2 } from '@/lang/values'
 import { DualValue } from '@/lang/grad'
 
@@ -220,7 +220,7 @@ function VertexHitbox({
         onPointerLeave={() => setHovered(false)}
         onPointerDown={handleClick}
       >
-        <circleGeometry args={[0.8, 16]} />
+        <circleGeometry args={[0.3, 16]} />
         <meshBasicMaterial />
       </mesh>
     </group>
@@ -231,18 +231,27 @@ function VertexHitbox({
 function LockIcons() {
   const locks = useStore((s) => s.locks)
   const tape = useStore((s) => s.tape)
+  const dragActiveLockKeys = useStore((s) => s.dragActiveLockKeys)
 
-  // Resolve lock display positions from tape primals
+  // Show a lock if:
+  // - it's active, OR
+  // - it went inert during drag but was active at drag start
   const lockPositions = useMemo(() => {
     if (!tape) return []
     return locks
-      .filter((l) => l.tapeXIdx < tape.nodes.length && l.tapeYIdx < tape.nodes.length)
+      .filter((l) => {
+        if (l.tapeXIdx >= tape.nodes.length || l.tapeYIdx >= tape.nodes.length) return false
+        if (l.active) return true
+        // Inert: only show if it was active at drag start
+        const key = [...l.rootIndices].sort().join(',')
+        return dragActiveLockKeys.has(key)
+      })
       .map((l) => ({
         x: tape.nodes[l.tapeXIdx].primal,
         y: tape.nodes[l.tapeYIdx].primal,
         active: l.active,
       }))
-  }, [locks, tape])
+  }, [locks, tape, dragActiveLockKeys])
 
   if (lockPositions.length === 0) return null
 
@@ -311,7 +320,7 @@ function DraggableBatches({
   const scene = useStore((s) => s.scene)
   const sessionRef = useRef<DragSession | null>(null)
 
-  const { onDrag } = useSceneDragDrop2D(
+  const { onDrag } = useSceneDragDrop(
     // onStart: find closest edge at intersection point, build session
     (worldPt, e) => {
       const tape = useStore.getState().tape
@@ -325,6 +334,12 @@ function DraggableBatches({
       e.stopPropagation()
       const session = buildDragSession(tape, hit.edge, hit.t, pt.x, pt.y, allEdges)
       sessionRef.current = session
+      // Snapshot which locks are active at drag start
+      const activeLockKeys = new Set<string>()
+      for (const l of useStore.getState().locks) {
+        if (l.active) activeLockKeys.add([...l.rootIndices].sort().join(','))
+      }
+      useStore.getState().setDragActiveLockKeys(activeLockKeys)
     },
     // onUpdate: optimize toward drag target
     async (worldPt) => {
@@ -337,6 +352,7 @@ function DraggableBatches({
     () => {
       sessionRef.current = null
       setOptPoint(null)
+      useStore.getState().setDragActiveLockKeys(new Set())
     },
   )
 
@@ -410,20 +426,29 @@ function ClearLocksButton() {
   )
 }
 
-function Batches() {
+function HintText() {
   const scene = useStore((s) => s.scene)
+  const hasEdges = scene.some((b) => b.edges.length > 0)
+  if (!hasEdges) return null
 
   return (
-    <>
-      {scene.map((batch, i) => (
-        <group key={i} renderOrder={i}>
-          <BatchPolygons batch={batch} />
-          <BatchFaces3 batch={batch} />
-          <BatchEdges batch={batch} />
-          <BatchPoints batch={batch} />
-        </group>
-      ))}
-    </>
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 8,
+        right: 12,
+        zIndex: 10,
+        color: '#52525b',
+        fontSize: 11,
+        fontFamily: 'monospace',
+        lineHeight: 1.4,
+        textAlign: 'right',
+        pointerEvents: 'none',
+        userSelect: 'none',
+      }}
+    >
+      drag edge to move | alt+click vertex to lock
+    </div>
   )
 }
 
@@ -435,6 +460,7 @@ export function Viewport() {
     <div style={{ position: 'relative', width: '100%', height: '100%' }} onContextMenu={(e) => e.preventDefault()}>
       <CameraModeButton />
       <ClearLocksButton />
+      <HintText />
       {cameraMode === '2d' ? (
         <Canvas
           key="ortho"
@@ -470,8 +496,22 @@ export function Viewport() {
           camera={{ position: [60, 80, 60], up: [0, 0, 1], fov: 50, near: 0.1, far: 2000 }}
           style={{ background: '#18181b' }}
         >
-          <OrbitControls target={[0, 0, 0]} makeDefault enableDamping={false} />
-          <Batches />
+          <OrbitControls
+            target={[0, 0, 0]}
+            makeDefault
+            enableDamping={false}
+            maxDistance={2000}
+            zoomToCursor={true}
+            mouseButtons={{
+              LEFT: undefined,
+              MIDDLE: undefined,
+              RIGHT: MOUSE.ROTATE,
+            }}
+          />
+          <DraggableBatches setOptPoint={setOptPoint} />
+          <VertexHitboxes />
+          <LockIcons />
+          {optPoint && <OptimizedDot position={optPoint} />}
         </Canvas>
       )}
     </div>

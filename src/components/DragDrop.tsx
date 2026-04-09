@@ -4,7 +4,7 @@
  * useScreenDragDrop: manages screen-space drag lifecycle (down → move → up),
  * handles debouncing, Escape cancellation, and cleanup.
  *
- * useSceneDragDrop2D: wraps useScreenDragDrop for a 2D orthographic scene,
+ * useSceneDragDrop: wraps useScreenDragDrop for a 2D orthographic scene,
  * converting screen coordinates to world coordinates.
  */
 
@@ -101,21 +101,29 @@ export function useScreenDragDrop<TPointerEvent extends { clientX: number; clien
   return { onDrag, isDragging }
 }
 
-// ---------- useSceneDragDrop2D ----------
+// ---------- useSceneDragDrop ----------
 
-const _vec3 = new THREE.Vector3()
+const _raycaster = new THREE.Raycaster()
+const _ndcVec = new THREE.Vector2()
+const _planeXY = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
+const _intersection = new THREE.Vector3()
 
-/** Convert screen-relative point [clientX, clientY] to world XY via orthographic unproject. */
+/** Convert screen-relative point [clientX, clientY] to world XY by raycasting onto the z=0 plane. */
 function screenToWorld(
   clientX: number, clientY: number,
   camera: THREE.Camera,
   canvas: HTMLCanvasElement,
 ): Point2 {
   const rect = canvas.getBoundingClientRect()
-  const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
-  const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1
-  _vec3.set(ndcX, ndcY, 0).unproject(camera)
-  return [_vec3.x, _vec3.y]
+  _ndcVec.set(
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -((clientY - rect.top) / rect.height) * 2 + 1,
+  )
+  _raycaster.setFromCamera(_ndcVec, camera)
+  const hit = _raycaster.ray.intersectPlane(_planeXY, _intersection)
+  if (hit) return [hit.x, hit.y]
+  // Fallback: should not happen unless camera is parallel to the plane
+  return [0, 0]
 }
 
 /**
@@ -124,7 +132,7 @@ function screenToWorld(
  * Returns `onDrag` — assign it to an R3F element's `onPointerDown`.
  * The `onUpdate` and `onComplete` callbacks receive world-space coordinates.
  */
-export function useSceneDragDrop2D(
+export function useSceneDragDrop(
   onSceneStart: (worldPt: Point2, e: ThreeEvent<PointerEvent>) => void,
   onSceneUpdate: (worldPt: Point2) => void,
   onSceneComplete: () => void,
