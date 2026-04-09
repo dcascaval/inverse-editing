@@ -1,5 +1,6 @@
 import {
   type Value,
+  type BuiltinFnVal,
   type Point2Val,
   type Point3Val,
   type Edge3Val,
@@ -16,6 +17,7 @@ import {
   createPoint3,
   createEdge3,
   constructRectangle,
+  createPolygon,
   createEdge,
   asNumber,
   asNumeric,
@@ -343,7 +345,9 @@ export function getProperty(obj: Value, prop: string, g: LineageGraph, tape?: Ta
       }
       break
     }
-    case 'array':
+    case 'array': {
+      const idx = Number(prop)
+      if (Number.isInteger(idx) && idx >= 0 && idx < obj.elements.length) return obj.elements[idx]
       if (prop === 'length') return createNumber(obj.elements.length)
       if (prop === 'single') return {
         type: 'builtin', name: 'array.single',
@@ -362,6 +366,7 @@ export function getProperty(obj: Value, prop: string, g: LineageGraph, tape?: Ta
         },
       }
       break
+    }
     case 'point3':
       if (prop === 'x') return createNumber(obj.x)
       if (prop === 'y') return createNumber(obj.y)
@@ -431,7 +436,7 @@ type Scope = Map<string, Value>
 export function makeBuiltins(buf: DrawBuffer, g: LineageGraph, tape?: Tape | null): Scope {
   const scope: Scope = new Map()
 
-  const register = (name: string, fn: (args: Value[]) => Value, ...aliases: string[]) => {
+  const register = (name: string, fn: BuiltinFnVal['fn'], ...aliases: string[]) => {
     const val: Value = { type: 'builtin', name, fn }
     scope.set(name, val)
     for (const a of aliases) scope.set(a, val)
@@ -470,6 +475,26 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph, tape?: Tape | nul
   ]))
 
   alias('rect', 'rectangle')
+
+  register('polygon', (args) => {
+    if (args.length !== 3) throw new Error('polygon: expected (center, sides, radius)')
+    if (args[0].type !== 'point2') throw new Error('polygon: first argument must be a point')
+    const center = args[0]
+    const sides = asNumber(args[1], 'polygon sides')
+    if (sides < 3 || !Number.isInteger(sides)) throw new Error('polygon: sides must be an integer >= 3')
+    const radius = asNumeric(args[2], 'polygon radius')
+    const pts: Point2Val[] = []
+    for (let i = 0; i < sides; i++) {
+      const angle = (2 * Math.PI * i) / sides
+      const cos = nv(Math.cos(angle), tape)
+      const sin = nv(Math.sin(angle), tape)
+      pts.push(createPoint(center.x.add(radius.mul(cos)), center.y.add(radius.mul(sin))))
+    }
+    const poly = createPolygon(pts, g)
+    for (const pt of poly.points) g.markRoot(pt)
+    for (const e of poly.edges) g.markRoot(e)
+    return poly
+  }, 'Polygon')
 
   scope.set('edge', overloaded('edge', [
     signature([Pt2, Pt2], (p1, p2) => createEdge(p1, p2, g)),
@@ -627,6 +652,30 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph, tape?: Tape | nul
   scope.set('difference', boolOp('difference'))
   scope.set('intersection', boolOp('intersection'))
 
+  // Union all
+
+  register('unionAll', (args) => {
+    const items: (PolygonVal | RectangleVal | RegionVal)[] = []
+    for (const a of args) {
+      if (a.type === 'array') {
+        for (const el of a.elements) {
+          if (el.type === 'polygon' || el.type === 'rectangle' || el.type === 'region') items.push(el)
+          else throw new Error(`unionAll: array element must be a polygon, rectangle, or region, got ${el.type}`)
+        }
+      } else if (a.type === 'polygon' || a.type === 'rectangle' || a.type === 'region') {
+        items.push(a)
+      } else {
+        throw new Error(`unionAll: expected polygon, rectangle, region, or array, got ${a.type}`)
+      }
+    }
+    if (items.length === 0) return { type: 'region', positive: [], negative: [] } as RegionVal
+    let result = toRegion(items[0])
+    for (let i = 1; i < items.length; i++) {
+      result = unionRegions(result, toRegion(items[i]), g, tape)
+    }
+    return result
+  }, 'UnionAll')
+
   // Chamfer
 
   register('chamfer', (args) => {
@@ -647,6 +696,20 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph, tape?: Tape | nul
     else throw new Error('chamfer: first argument must be a polygon or rectangle')
     return chamferPolygon(poly, vertices, radiusArg.value, g)
   })
+
+  // Higher-order: Tabulate
+
+  register('tabulate', (args, apply) => {
+    if (args.length !== 2) throw new Error('tabulate: expected (n, fn)')
+    const n = asNumber(args[0], 'tabulate count')
+    const fn = args[1]
+    if (fn.type !== 'lambda') throw new Error('tabulate: second argument must be a lambda')
+    const elements: Value[] = []
+    for (let i = 0; i < n; i++) {
+      elements.push(apply(fn, [createNumber(i, tape)]))
+    }
+    return { type: 'array', elements }
+  }, 'Tabulate')
 
   // 3D: Extrude3D
 

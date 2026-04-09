@@ -137,10 +137,12 @@ export type LambdaVal = {
   body: Expression
 }
 
+export type ApplyFn = (lambda: LambdaVal, args: Value[]) => Value
+
 export type BuiltinFnVal = {
   type: 'builtin'
   name: string
-  fn: (args: Value[]) => Value
+  fn: (args: Value[], apply: ApplyFn) => Value
 }
 
 export type OperationVal = {

@@ -1,5 +1,4 @@
-import MonacoEditor, { type BeforeMount } from '@monaco-editor/react'
-import type { editor } from 'monaco-editor'
+import MonacoEditor, { type BeforeMount, type OnMount } from '@monaco-editor/react'
 import { useStore } from '@/store'
 import { runProgram } from '@/execute'
 
@@ -14,7 +13,7 @@ export function Editor() {
     })
   }
 
-  function handleMount(ed: editor.IStandaloneCodeEditor) {
+  const handleMount: OnMount = (ed) => {
     ed.addAction({
       id: 'qsynth-run',
       label: 'Run Program',

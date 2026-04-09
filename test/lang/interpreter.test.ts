@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Point2 } from '@/lang/values'
-import { run, runOk, drawn } from '@test/lib'
+import { run, runOk, drawn, drawnEdgeCount, drawnPointCount } from '@test/lib'
 
 
 // Basic arithmetic & variables
@@ -441,5 +441,88 @@ draw(p)
 draw(q)`)
     approxPt(points[0], 1, 1)
     approxPt(points[1], 11, 1)
+  })
+})
+
+
+// Regular polygon constructor
+
+
+describe('polygon', () => {
+  it('creates a triangle with 3 edges', () => {
+    const count = drawnEdgeCount(`parameters {}
+draw(polygon(pt(0, 0), 3, 5))`)
+    expect(count).toBe(3)
+  })
+
+  it('creates a hexagon with 6 edges', () => {
+    const count = drawnEdgeCount(`parameters {}
+draw(polygon(pt(0, 0), 6, 10))`)
+    expect(count).toBe(6)
+  })
+
+  it('vertices lie on the circle', () => {
+    const { edges } = drawn(`parameters {}
+draw(polygon(pt(10, 20), 4, 5))`)
+    expect(edges).toHaveLength(4)
+    for (const e of edges) {
+      const dx = e.start.x - 10, dy = e.start.y - 20
+      expect(Math.sqrt(dx * dx + dy * dy)).toBeCloseTo(5, 5)
+    }
+  })
+
+  it('Polygon alias works', () => {
+    const count = drawnEdgeCount(`parameters {}
+draw(Polygon(pt(0, 0), 5, 3))`)
+    expect(count).toBe(5)
+  })
+
+  it('edges are indexable with dot-number syntax', () => {
+    const { edges } = drawn(`parameters {}
+hex = polygon(pt(0, 0), 6, 10)
+draw(hex.edges.0)`)
+    expect(edges).toHaveLength(1)
+  })
+
+  it('points and edges are root primitives', () => {
+    const count = drawnEdgeCount(`parameters {}
+hex = polygon(pt(0, 0), 6, 10)
+h2 = hex.translate(30, 0)
+draw(query(h2.edges, from(hex.edges.0)))`)
+    expect(count).toBe(1)
+  })
+})
+
+
+// Tabulate
+
+
+describe('tabulate', () => {
+  it('produces an array of n elements', () => {
+    const { drawBuffer } = run(`parameters {}
+a = tabulate(4, i => pt(i, 0))
+draw(a)`)
+    expect(drawBuffer.batches[0].points).toHaveLength(4)
+  })
+
+  it('passes indices 0 to n-1', () => {
+    const { points } = drawn(`parameters {}
+draw(tabulate(3, i => pt(i, i * 2)))`)
+    approxPt(points[0], 0, 0)
+    approxPt(points[1], 1, 2)
+    approxPt(points[2], 2, 4)
+  })
+
+  it('Tabulate alias works', () => {
+    const count = drawnPointCount(`parameters {}
+draw(Tabulate(5, i => pt(i, 0)))`)
+    expect(count).toBe(5)
+  })
+
+  it('works with transforms', () => {
+    const count = drawnEdgeCount(`parameters {}
+hex = polygon(pt(0, 0), 6, 10)
+draw(tabulate(3, i => hex.translate(i * 25, 0)))`)
+    expect(count).toBe(18)
   })
 })

@@ -2,6 +2,7 @@ import { type Expression, type Program, show } from '@/lang/ast'
 import { Matrix4 } from 'three'
 import {
   type Value,
+  type LambdaVal,
   type Point2Val,
   type Point2, createNumber,
   createNull,
@@ -185,7 +186,20 @@ function evaluate(expr: Expression, ctx: Context, buf: DrawBuffer, g: LineageGra
       const callee = evaluate(expr.callee, ctx, buf, g, tape)
       const args = expr.args.map((a) => evaluate(a, ctx, buf, g, tape))
 
-      if (callee.type === 'builtin') return callee.fn(args)
+      if (callee.type === 'builtin') {
+        const apply = (lambda: LambdaVal, lambdaArgs: Value[]): Value => {
+          ctx.push()
+          try {
+            for (let i = 0; i < lambda.params.length; i++) {
+              ctx.assign(lambda.params[i], lambdaArgs[i] ?? createNull())
+            }
+            return evaluate(lambda.body, ctx, buf, g, tape)
+          } finally {
+            ctx.pop()
+          }
+        }
+        return callee.fn(args, apply)
+      }
 
       if (callee.type === 'lambda') {
         ctx.push()

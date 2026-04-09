@@ -164,7 +164,7 @@ type PostfixSuffix =
 
 const postfixSuffix = alt_sc(
   apply(
-    kright(seq(_, tok(Token.Dot)), tok(Token.Ident)),
+    kright(seq(_, tok(Token.Dot)), alt_sc(tok(Token.Ident), tok(Token.Number))),
     (t): PostfixSuffix => ({ kind: 'prop', name: t.text }),
   ),
   apply(parenArgs, (args): PostfixSuffix => ({ kind: 'call', args })),
