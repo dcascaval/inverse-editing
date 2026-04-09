@@ -503,11 +503,11 @@ function buildOutputPolygon(mergedLoop: MergedEdge[], g: LineageGraph): PolygonV
 
   const poly = createPolygon(points, g)
 
-  // Propagate indirect lineage from all merged source edges to the output edge,
-  // matching the Scala: lineage(Seq(a, b) -> mergedLine)
+  // Propagate direct lineage from all merged source edges to the output edge,
+  // so that from(srcEdge) can find the output edge via direct BFS.
   for (let i = 0; i < mergedLoop.length; i++) {
     for (const sub of mergedLoop[i].mergedFrom) {
-      g.indirect(sub.srcEdge, poly.edges[i])
+      g.direct(sub.srcEdge, poly.edges[i])
     }
   }
 

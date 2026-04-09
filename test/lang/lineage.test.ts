@@ -202,6 +202,28 @@ draw(query(b.points, contains(from(a.top))))`)
 
 
 describe('lineage through booleans', () => {
+  it('from(edge) finds split edge segments in union', () => {
+    // r1.right gets split by r2 in the T-piece union — the two surviving
+    // segments (above and below r2) must both be reachable from r1.right.
+    const count = drawnEdgeCount(`parameters {}
+r1 = rect(pt(5, 5), 14, 36)
+r2 = rect(pt(7.5, 15), 24, 12)
+u = union(r1, r2)
+draw(query(u.edges, from(r1.right)))`)
+    expect(count).toBe(2)
+  })
+
+  it('from(edge) and contains(from(point)) narrows to one segment', () => {
+    // Of the two segments from r1.right, only the lower one contains a point
+    // reachable from r1.bottomRight.
+    const count = drawnEdgeCount(`parameters {}
+r1 = rect(pt(5, 5), 14, 36)
+r2 = rect(pt(7.5, 15), 24, 12)
+u = union(r1, r2)
+draw(query(u.edges, from(r1.right) and contains(from(r1.bottomRight))))`)
+    expect(count).toBe(1)
+  })
+
   it('chained union preserves lineage for chamfer query', () => {
     // Regression: query(u.points, from(r3.top)) must find both endpoints of r3.top
     // in the union result, even through chained unions where duplicate collinear edges
