@@ -485,8 +485,22 @@ function buildOutputPolygon(mergedLoop: MergedEdge[], g: LineageGraph): PolygonV
 function extractPoly(v: Value): PolyData {
   switch (v.type) {
     case 'rectangle':
-    case 'polygon':
+    case 'polygon': {
+      // Ensure CCW winding — mirrors and certain transforms can produce CW polygons,
+      // which breaks the edge-filtering and loop-reconstruction logic.
+      const area = signedArea2(v.points)
+      if (area < 0) {
+        // CW winding: reverse points and remap edges so edges[i] still
+        // corresponds to the segment points[i] → points[(i+1) % n].
+        // After reversing, new points[i] = old points[n-1-i], so the
+        // segment between new[i] and new[i+1] was old edge[(n-2-i) % n].
+        const n = v.points.length
+        const pts = [...v.points].reverse()
+        const edges = pts.map((_, i) => v.edges[(n - 2 - i + n) % n])
+        return { points: pts, edges }
+      }
       return { points: v.points, edges: v.edges }
+    }
     default:
       throw new Error(`Cannot use ${v.type} in boolean operation`)
   }

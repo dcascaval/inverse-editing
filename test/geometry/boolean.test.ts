@@ -54,6 +54,32 @@ draw(c)`)
     expect(edges.length).toBe(4)
   })
 
+  it('union of two rotated overlapping rectangles produces a merged polygon', () => {
+    const result = runOk(`parameters {}
+r = rect(-15, -4, 30, 8)
+a = r.rotate(25)
+b = r.rotate(-25)
+c = union(a, b)
+draw(c)`)
+    const polys = result.drawBuffer.batches.flatMap((b) => b.polygons)
+    const edges = result.drawBuffer.batches.flatMap((b) => b.edges)
+    // Two overlapping rotated rects should produce a non-empty union
+    expect(polys.length).toBeGreaterThan(0)
+    expect(edges.length).toBeGreaterThan(0)
+  })
+
+  it('union of mirrored rotated rectangles is non-empty', () => {
+    // Regression: union of two overlapping rotated rects returned empty region
+    const result = runOk(`parameters {}
+r = rect(-15, -2.5, 30, 5)
+beamR = r.rotate(25)
+beamL = beamR.mirror(pt(0,0), pt(0,1))
+silhouette = union(beamR, beamL)
+draw(silhouette)`)
+    const edges = result.drawBuffer.batches.flatMap((b) => b.edges)
+    expect(edges.length).toBeGreaterThan(0)
+  })
+
   it('union where one is inside the other returns outer', () => {
     const result = runOk(`parameters {}
 a = rect(0, 0, 20, 20)
