@@ -1,29 +1,8 @@
-/**
- * Chamfer: cut corners of a polygon at specified vertices.
- *
- * For each target vertex, we offset along the two adjacent edges by the
- * chamfer radius and replace the vertex with two new points connected
- * by a straight chamfer edge.
- *
- * Based on ChamferAll / computeVertexTrim from the Scala reference.
- */
-
 import type { NumericValue } from '@/lang/numeric'
-import { real } from '@/lang/numeric'
 import type { PolygonVal, Point2Val } from '@/lang/values'
 import { createPoint, createPolygon } from '@/lang/values'
 import type { LineageGraph } from '@/lang/lineage'
 
-
-/**
- * Chamfer the specified vertices of a polygon.
- *
- * @param poly - Input polygon
- * @param vertices - Points to chamfer (matched by reference equality against poly.points)
- * @param radius - Chamfer distance along each edge from the vertex
- * @param g - Lineage graph for edge creation
- * @returns New polygon with chamfered corners
- */
 export function chamferPolygon(
   poly: PolygonVal,
   vertices: Set<Point2Val>,

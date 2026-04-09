@@ -1,7 +1,6 @@
 import * as THREE from 'three'
 import type { Polygon2, Quad3, PlanarFaceDraw } from '@/lang/interpreter'
 
-/** Convert Polygon2 (with optional holes) to a THREE.Shape. */
 export function polygonToShape(poly: Polygon2): THREE.Shape | null {
   const vs = poly.vertices
   if (vs.length < 3) return null
@@ -22,7 +21,6 @@ export function polygonToShape(poly: Polygon2): THREE.Shape | null {
   return shape
 }
 
-/** Convert an array of Polygon2 to a single ShapeGeometry. */
 export function polygonsToGeometry(polygons: Polygon2[]): THREE.ShapeGeometry | null {
   const shapes: THREE.Shape[] = []
   for (const poly of polygons) {
@@ -32,10 +30,6 @@ export function polygonsToGeometry(polygons: Polygon2[]): THREE.ShapeGeometry | 
   if (shapes.length === 0) return null
   return new THREE.ShapeGeometry(shapes)
 }
-
-
-// ── 3D face geometry ──
-
 
 /** Build a BufferGeometry from an array of 3D quads (2 triangles each). */
 export function quads3ToGeometry(quads: Quad3[]): THREE.BufferGeometry | null {

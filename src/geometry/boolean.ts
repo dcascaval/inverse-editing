@@ -13,17 +13,10 @@ import type { Tape } from '@/lang/grad'
 import type { LineageGraph } from '@/lang/lineage'
 import { pointInPolygon } from '@/geometry/polygon'
 
-
-// ---- Constants ----
-
-
 const EPS = 1e-10
 const MATCH_EPS = 1e-6
 const SEG_TOL = 1e-6
 const SEG_TOL_SQ = SEG_TOL * SEG_TOL
-
-
-// ---- Internal types ----
 
 
 type NVec2 = { x: NumericValue; y: NumericValue }
@@ -43,7 +36,6 @@ type PolyData = {
 
 // ---- Geometry utilities ----
 
-
 function xn(p: NVec2): number { return p.x.toNumber() }
 function yn(p: NVec2): number { return p.y.toNumber() }
 
@@ -53,15 +45,6 @@ function toPlain(p: NVec2): { x: number; y: number } {
 
 function samePoint(a: NVec2, b: NVec2): boolean {
   return Math.abs(xn(a) - xn(b)) < MATCH_EPS && Math.abs(yn(a) - yn(b)) < MATCH_EPS
-}
-
-/** Parameter t such that projection of pt onto line a->b is a + t*(b-a). */
-function closestParameter(a: NVec2, b: NVec2, pt: NVec2): number {
-  const ax = xn(a), ay = yn(a)
-  const dx = xn(b) - ax, dy = yn(b) - ay
-  const len2 = dx * dx + dy * dy
-  if (len2 < EPS * EPS) return 0
-  return ((xn(pt) - ax) * dx + (yn(pt) - ay) * dy) / len2
 }
 
 function signedArea2(pts: NVec2[]): number {
@@ -81,10 +64,6 @@ function polyContainsPoly(outer: NVec2[], inner: NVec2[]): boolean {
       && pointInPolygon(toPlain(inner[1]), outerPlain)
 }
 
-
-// ---- NumericValue interpolation ----
-
-
 /** Interpolate between two NumericValue points: a + t * (b - a) */
 function lerpNV(a: NVec2, b: NVec2, t: number, tape?: Tape | null): NVec2 {
   const tNV = nv(t, tape)
@@ -93,9 +72,6 @@ function lerpNV(a: NVec2, b: NVec2, t: number, tape?: Tape | null): NVec2 {
     y: a.y.add(b.y.sub(a.y).mul(tNV)),
   }
 }
-
-
-// ---- Segment-segment intersection ----
 
 
 type Intersection = {
@@ -121,7 +97,7 @@ function segSegIntersect(a1: NVec2, a2: NVec2, b1: NVec2, b2: NVec2): Intersecti
 
   const crossNorm = Math.abs(cross) / (lenA * lenB)
 
-  // ---- Collinear / parallel case ----
+  // Collinear / parallel case: add all end points
   if (crossNorm < Math.sqrt(SEG_TOL)) {
     const result: Intersection[] = []
 
@@ -156,7 +132,7 @@ function segSegIntersect(a1: NVec2, a2: NVec2, b1: NVec2, b2: NVec2): Intersecti
     return result
   }
 
-  // ---- Non-parallel case ----
+  // Normal case
   const t = ((b1x - a1x) * dby - (b1y - a1y) * dbx) / cross
   const u = ((b1x - a1x) * day - (b1y - a1y) * dax) / cross
   if (t < -SEG_TOL || t > 1 + SEG_TOL || u < -SEG_TOL || u > 1 + SEG_TOL) return []
@@ -171,8 +147,7 @@ function segSegIntersect(a1: NVec2, a2: NVec2, b1: NVec2, b2: NVec2): Intersecti
 }
 
 
-// ---- Intersection finding (like Scala allIntersections) ----
-
+// Intersection finding
 
 type EdgeIntersection = { point: Point2Val; param: number }
 
@@ -215,9 +190,7 @@ function findAllIntersections(
 }
 
 
-// ---- Edge splitting (like Scala splitPolyWithIntersections) ----
-
-
+// Edge splitting
 function splitPoly(
   poly: PolyData, polyId: 0 | 1,
   ixMap: Map<Edge2Val, EdgeIntersection[]>,
@@ -255,8 +228,7 @@ function splitPoly(
 }
 
 
-// ---- Edge deduplication and filtering ----
-
+// Edge deduplication and filtering
 
 function sameEdge(a: SubEdge, b: SubEdge): boolean {
   return samePoint(a.start, b.start) && samePoint(a.end, b.end)
@@ -282,7 +254,7 @@ function deduplicateAndFilter(
       allEdges.splice(eqIdx, 1)
       // Both edges occupy the same space — unify lineage from the discarded
       // edge's endpoints into the kept edge's endpoints so provenance from
-      // both source polygons is preserved (cf. Scala applyPolygonReferences).
+      // both source polygons is preserved
       g.direct(edge.start, matched.start)
       g.direct(edge.end, matched.end)
       g.direct(matched.start, edge.start)
@@ -350,9 +322,7 @@ function deduplicateAndFilter(
 }
 
 
-// ---- Graph reconstruction ----
-
-
+// Stitch up edges back into polygons
 function reconstructLoops(edges: SubEdge[]): SubEdge[][] {
   if (edges.length === 0) return []
 
@@ -436,8 +406,7 @@ function reconstructLoops(edges: SubEdge[]): SubEdge[][] {
 }
 
 
-// ---- Collinear merging ----
-
+// Collinear merging 
 
 function isCollinear(a: SubEdge, b: SubEdge): boolean {
   const dax = xn(a.end) - xn(a.start), day = yn(a.end) - yn(a.start)
@@ -471,16 +440,12 @@ function mergeCollinearEdges(loop: SubEdge[], g: LineageGraph): MergedEdge[] {
   return merged
 }
 
-
-// ---- Output construction with lineage ----
-
-
 function buildOutputPolygon(mergedLoop: MergedEdge[], g: LineageGraph): PolygonVal {
   const n = mergedLoop.length
 
   // Each output vertex is the start of edge[i] AND the end of edge[i-1]. These may be different
   // Point2Val objects (from different source polygons) that coincide spatially.
-  // We propagate lineage from both to preserve reachability (cf. Scala applyPolygonReferences).
+  // We propagate lineage from both to preserve reachability
   const points: Point2Val[] = mergedLoop.map((m, i) => {
     const pt = createPoint(m.subEdge.start.x, m.subEdge.start.y)
     g.direct(m.subEdge.start, pt)
@@ -490,14 +455,16 @@ function buildOutputPolygon(mergedLoop: MergedEdge[], g: LineageGraph): PolygonV
     if (prevEnd !== m.subEdge.start) {
       g.direct(prevEnd, pt)
     }
-    // NOTE: intermediate points consumed by collinear merging (e.g. B in
-    // [A→B, B→C] merged to [A→C]) are dropped. The Scala reference treats
-    // this as an open question and does not propagate their lineage to
-    // surviving vertices. We match that behavior for now.
+
+    // TODO: intermediate points consumed by collinear merging (e.g. B in
+    // [A -> B, B -> C] merged to [A -> C]) are dropped. open question:
+    // do we propagate indirect lineage to surviving vertices?
+
     // for (let k = 0; k < m.mergedFrom.length - 1; k++) {
     //   g.direct(m.mergedFrom[k].end, pt)
     //   g.direct(m.mergedFrom[k + 1].start, pt)
     // }
+
     return pt
   })
 
@@ -515,9 +482,6 @@ function buildOutputPolygon(mergedLoop: MergedEdge[], g: LineageGraph): PolygonV
 }
 
 
-// ---- Extract polygon data from Value ----
-
-
 function extractPoly(v: Value): PolyData {
   switch (v.type) {
     case 'rectangle':
@@ -527,10 +491,6 @@ function extractPoly(v: Value): PolyData {
       throw new Error(`Cannot use ${v.type} in boolean operation`)
   }
 }
-
-
-// ---- Public API ----
-
 
 export type BooleanOp = 'union' | 'difference' | 'intersection'
 
@@ -588,10 +548,6 @@ export function booleanOperation(
 }
 
 
-// ---- Early-return helpers ----
-// These preserve NumericValue through since they copy from the original Point2Val.
-
-
 function buildSingleRegion(v: Value, g: LineageGraph): RegionVal {
   const p = extractPoly(v)
   const pts = p.points.map((pt) => createPoint(pt.x, pt.y))
@@ -627,21 +583,13 @@ function buildDifferenceHole(outer: Value, hole: Value, g: LineageGraph): Region
 }
 
 
-// ---- Region-level boolean operations ----
+// Region-level boolean operations
 // These compose polygon-level booleans to handle regions (positive + negative polygon sets).
-// Translated from the Scala implementation in elodin/opt/operations.scala.
 
-
-/** Wrap a polygon as a single-positive region. */
 function asRegion(poly: PolygonVal): RegionVal {
   return { type: 'region', positive: [poly], negative: [] }
 }
 
-/**
- * Reverse a polygon's winding order (CW->CCW or CCW->CW).
- * Negative polygons from boolean ops have CW winding; they must be reversed
- * to CCW before being used as inputs to booleanOperation.
- */
 function reverseWinding(poly: PolygonVal, g: LineageGraph): PolygonVal {
   const pts = [...poly.points].reverse()
   return createPolygon(pts, g)
@@ -717,10 +665,6 @@ function addPolygonToRegion(
   }
 }
 
-/**
- * Union two regions.
- * Folds b's positive polygons into a's region, then handles b's negative polygons.
- */
 export function unionRegions(
   a: RegionVal, b: RegionVal, g: LineageGraph, tape?: Tape | null,
 ): RegionVal {
@@ -762,9 +706,6 @@ export function unionRegions(
   }
 }
 
-/**
- * Subtract region b from region a.
- */
 export function subtractRegions(
   a: RegionVal, b: RegionVal, g: LineageGraph, tape?: Tape | null,
 ): RegionVal {

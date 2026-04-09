@@ -25,8 +25,8 @@ import {
 import type { LineageGraph } from '@/lang/lineage'
 
 
-// ── 2D Affine Transform (NumericValue-based) ──
-//
+// 2D Affine Transform
+// 
 // Represents: x' = a*x + c*y + tx
 //             y' = b*x + d*y + ty
 

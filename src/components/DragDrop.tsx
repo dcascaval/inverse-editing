@@ -1,5 +1,5 @@
 /**
- * Drag-drop hooks for R3F, ported from Concept/Frontend/src/Common/DragDrop.tsx.
+ * Drag-drop hooks for R3F
  *
  * useScreenDragDrop: manages screen-space drag lifecycle (down → move → up),
  * handles debouncing, Escape cancellation, and cleanup.
@@ -18,7 +18,7 @@ type Point2 = [number, number]
 
 /**
  * Stable callback ref that always calls the latest closure without
- * invalidating downstream memoization. Ported from Concept/Common/utils.ts.
+ * invalidating downstream memoization
  */
 function useCallbackRef<T extends (...args: any[]) => any>(callback: T): T {
   const ref = useRef(callback)
@@ -140,7 +140,7 @@ export function useSceneDragDrop(
   onSceneComplete: () => void,
   /** When set, subsequent mouse moves raycast onto z=this value instead of z=0.
    *  Allows dragging on vertical 3D faces at the correct depth. */
-  dragPlaneZRef?: React.MutableRefObject<number>,
+  dragPlaneZRef?: React.RefObject<number>,
 ) {
   const camera = useThree((s) => s.camera)
   const canvas = useThree((s) => s.gl.domElement)
