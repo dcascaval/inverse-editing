@@ -1,0 +1,32 @@
+parameters {
+  w1: 20
+  w2: 7.5
+  h1: 6.5
+  h2: 25
+  h3: 7.5
+  w3: 25
+  w4: 20
+  w5: 5
+  chmf: 4
+}
+
+base = pt(5, 5)
+
+operation program(H1, H2) {
+  r1 = Rectangle(base, w1, H1)
+  r2 = Rectangle(r1.bottomRight, -w2, H2)
+  r3 = Rectangle(r2.topLeft, w3, -h3)
+  r4 = Rectangle(r3.topRight, -w2, -H2)
+  r5 = Rectangle(r4.bottomLeft, w4, H1)
+
+  u = Union(r1, Union(r2, Union(r3, Union(r4, r5))))
+  cp = query(u.points, from(r3.top))
+}
+
+p = program(h1, h2)
+
+draw(p.r1, p.r2, p.r3, p.r4, p.r5, dashed)
+draw(p.cp, color(blue))
+print(p.cp)
+c = Chamfer(p.u.single(), p.cp, chmf)
+draw(c, translucent(0.1))

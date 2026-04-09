@@ -1,0 +1,18 @@
+parameters {
+  r1: 20
+  r2: 20
+  offset: 10
+  theta: 30
+}
+
+a = square(25, 25, r1)
+b = square(25 + offset, 25 - offset, r2)
+draw(a, b, dashed)
+
+c = b.rotate(b.topLeft, theta)
+u = union(a, c)
+draw(u, translucent(0.25))
+
+// draw(u.edges)
+success = query(u.edges, from(b.bottom)) // Query
+draw(success, color(orange))

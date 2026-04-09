@@ -1,0 +1,26 @@
+parameters {
+  w1: 14
+  h1: 36
+  w2: 24
+  h2: 12
+  x2: 7.5
+  cr: 4
+}
+
+base1 = pt(5,5)
+base2 = pt(x2,15)
+
+r1 = Rectangle(base1, w1, h1)
+r2 = Rectangle(base2, w2, h2)
+draw(r1, r2, dashed)
+
+u = Union(r1, r2).single()
+
+ps = query(u.points, from(r1.right, r2.bottom))
+draw(ps, color(purple)) // Query 1
+
+edge = query(u.edges, from(r1.right) and contains(from(r1.bottomRight))) 
+draw(edge, color(orange))  // Query 2
+
+c = Chamfer(u, ps, cr)
+draw(c, translucent(0.25)) 

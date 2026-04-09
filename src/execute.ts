@@ -15,8 +15,8 @@ function upperBound(value: number): number {
 /**
  * Sync sliders from a parsed parameter block.
  */
-export function syncSliders(program: Program) {
-  const existing = useStore.getState().sliders
+export function syncSliders(program: Program, reset = false) {
+  const existing = reset ? [] : useStore.getState().sliders
   const sliders: Slider[] = program.parameters.parameters.map((p) => {
     const { min: pMin, mid, max: pMax } = p.bounds
     const explicit = pMin !== mid || pMax !== mid
@@ -45,12 +45,12 @@ export function syncSliders(program: Program) {
   useStore.getState().setSliders(sliders)
 }
 
-function exec(code: string, sync: boolean, mode: ExecutionMode = 'dual') {
+function exec(code: string, sync: boolean, mode: ExecutionMode = 'dual', reset = false) {
   const store = useStore.getState()
 
   try {
     const program = parse(code)
-    if (sync) syncSliders(program)
+    if (sync) syncSliders(program, reset)
 
     const paramValues = new Map<string, number>()
     for (const s of useStore.getState().sliders) {
@@ -84,8 +84,8 @@ function exec(code: string, sync: boolean, mode: ExecutionMode = 'dual') {
 /**
  * Parse, sync sliders, execute, and update scene + error state.
  */
-export function runProgram(src?: string) {
-  exec(src ?? useStore.getState().code, true)
+export function runProgram(src?: string, reset = false) {
+  exec(src ?? useStore.getState().code, true, 'dual', reset)
 }
 
 /**

@@ -1,0 +1,38 @@
+parameters {
+  h1: 10
+  h2: 7
+  ex1: 20
+  c: 4
+  dt: 0 < 0.5 < 1.0
+  rd: 2
+}
+
+root = pt(4,-4)
+r0 = Rectangle(root, -h1, h1)
+center = pt(r0.top.midpoint.x, r0.right.midpoint.y)
+
+l1 = Line(r0.topRight, pt(r0.topRight.x, r0.right.at(dt).y))
+
+r1 = ExtrudeCurve(l1, ex1, pt(-2, 1))
+r2 = ExtrudeCurve(r1.top, h2)
+
+rflLine = r1.right.translate(rd, rd)
+
+draw(rflLine, color(orange), dashed)
+draw(r1, dashed)
+draw(r1.top.start, r1.top.end, color(red))
+
+u1 = unionAll(r0, r1, r2)
+r4 = r0.scale(center, 0.5)
+r4c = Chamfer(r4, query(r4.points, from(r0.bottomRight)), c)
+// draw(r4c, color(red))
+
+u2 = Difference(u1, r4c)
+u3 = u2.mirror(rflLine)
+draw(u2, u3, translucent(0.25))
+
+innerEdgeQuery = derivedFrom(r1.front) and not(derivedFrom(r2))
+
+inE1 = query(u2.edges, innerEdgeQuery)
+inE2 = query(u3.edges, innerEdgeQuery)
+draw(inE1, inE2, color(blue))

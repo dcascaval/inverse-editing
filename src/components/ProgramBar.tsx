@@ -17,8 +17,8 @@ export function ProgramBar() {
         value={activeIndex}
         onChange={(e) => {
           selectProgram(Number(e.target.value))
-          // Re-execute with new program's code and sync parameters
-          runProgram()
+          // Re-execute with new program's code, resetting sliders
+          runProgram(undefined, true)
         }}
         className="bg-zinc-700 text-zinc-200 rounded px-2 py-0.5 text-sm outline-none"
       >

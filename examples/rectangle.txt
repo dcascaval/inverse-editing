@@ -1,0 +1,21 @@
+parameters {
+    w: 0 < 10 < 20
+    y: 0 < 1 < 5
+    h: 0 < 10 < 20
+    x: 0 < 2 < 10
+    f: 0 < 0.5 < 1
+    deg: -90 < 0 < 90
+}
+
+r0 = rect(x,y,w,h)
+r1 = r0
+       .scale(r0.topLeft, f)
+       .rotate(r0.topLeft, deg)
+
+r2 = Difference(r0, r1)
+draw(r2.edges, color(gray), stroke(white))
+
+draw(Extrude3d(r2, 5), color(blue), stroke(white), translucent(0.4))
+
+// draw(r0, r1, pt(0,0), stroke(red), dashed)
+

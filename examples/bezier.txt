@@ -1,0 +1,37 @@
+parameters {
+  ax: -1 < 0 < 1
+  ay: -1 < 0 < 1
+  bx: -1 < 0 < 1
+  by: 0 < 1 < 2
+  cx: 1 < 2 < 3
+  cy: 0 < 1 < 2
+  dx: 1 < 2 < 3
+  dy: 2 < 3 < 4
+  r: 0 < 0.5 < 1
+}
+
+s = 4
+a = pt(s*ax, s*ay)
+b = pt(s*bx, s*by)
+c = pt(s*cx, s*cy)
+d = pt(s*dx, s*dy)
+
+bez = (t) => {
+  t2 = t*t
+  t3 = t*t*t
+  it = 1.0 - t
+  it2 = it * it
+  it3 = it2 * it 
+
+  px = (it3 * a.x) + (3 * it2 * t * b.x) + (3 * it * t2 * c.x) + (t3 * d.x)
+  py = (it3 * a.y) + (3 * it2 * t * b.y) + (3 * it * t2 * c.y) + (t3 * d.y)
+  pt(px,py)
+}
+
+curve = Tabulate(11, i => polygon(bez(i/10),4, r))
+
+
+u = unionAll(curve)
+
+draw(line(a,b), line(c,d))
+draw(u.edges)

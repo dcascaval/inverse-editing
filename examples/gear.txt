@@ -1,0 +1,28 @@
+parameters {
+ holeR: 10
+ tThk: 2.4
+ tOut: 4.0
+ hexR: 3.0
+ keyH: 1.5
+}
+
+c = polygon(pt(0,0), 18, holeR)
+t = Rectangle(pt(-tThk/2, -tOut/2), tThk, tOut)
+
+tooth = t.translate(0, holeR)
+cPointQuery = (from(t.right) or from(t.left)) and not(derivedFrom(t.bottom))
+
+tooth = Chamfer(tooth, query(tooth.points, cPointQuery), tThk/3)
+tooth = Chamfer(tooth, query(tooth.points, cPointQuery), tThk/4)
+tooth = Chamfer(tooth, query(tooth.points, cPointQuery), tThk/4)
+
+nTeeth = 18 
+teeth = Tabulate(nTeeth, i => tooth.rotate(pt(0,0), 360 * (i / nTeeth)))
+gear = UnionAll(c, teeth)
+
+hex = Polygon(pt(0,0), 6, hexR)
+key = Rectangle(hex.edges.1.midpoint, 2, keyH).translate(-1, -0.5)
+gear = Difference(gear, Union(hex,key))
+
+draw(gear.edges)
+draw(Extrude3D(gear, 4.0), translucent(0.25))
