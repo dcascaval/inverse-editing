@@ -286,25 +286,24 @@ stmt.setPattern(
 // Parameter block
 
 
+// Optionally-negated number literal for parameter bounds
+const signedNumber = apply(
+  seq(opt_sc(tok(Token.Minus)), tok(Token.Number)),
+  ([neg, num]) => (neg ? -1 : 1) * parseFloat(num.text),
+)
+
 const paramBounds = alt_sc(
   // min < mid < max
   apply(
     seq(
-      tok(Token.Number),
-      kright(tok(Token.Lt), tok(Token.Number)),
-      kright(tok(Token.Lt), tok(Token.Number)),
+      signedNumber,
+      kright(tok(Token.Lt), signedNumber),
+      kright(tok(Token.Lt), signedNumber),
     ),
-    ([min, mid, max]): ParamBounds => ({
-      min: parseFloat(min.text),
-      mid: parseFloat(mid.text),
-      max: parseFloat(max.text),
-    }),
+    ([min, mid, max]): ParamBounds => ({ min, mid, max }),
   ),
   // bare value (min = max = mid)
-  apply(tok(Token.Number), (t): ParamBounds => {
-    const v = parseFloat(t.text)
-    return { min: v, mid: v, max: v }
-  }),
+  apply(signedNumber, (v): ParamBounds => ({ min: v, mid: v, max: v })),
 )
 
 const paramEntry = apply(

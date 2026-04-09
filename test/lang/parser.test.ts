@@ -297,6 +297,20 @@ describe('parameter block', () => {
     ])
   })
 
+  it('parses negative bounds', () => {
+    const prog = parse('parameters {\n  deg: -90 < 0 < 90\n}')
+    expect(prog.parameters!.parameters).toEqual([
+      { name: 'deg', bounds: { min: -90, mid: 0, max: 90 } },
+    ])
+  })
+
+  it('parses bare negative value', () => {
+    const prog = parse('parameters {\n  x: -5\n}')
+    expect(prog.parameters!.parameters).toEqual([
+      { name: 'x', bounds: { min: -5, mid: -5, max: -5 } },
+    ])
+  })
+
   it('parses multiple parameters', () => {
     const prog = parse(`parameters {
       holeR: 10

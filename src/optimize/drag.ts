@@ -52,7 +52,7 @@ export function findClosestEdge(
 
 
 /* Base regularization weight */
-const LAMBDA = 0.5;
+const LAMBDA = 2.5;
 
 /**
  * Compute per-parameter selectivity weights using forward-mode tangent passes.
@@ -90,27 +90,36 @@ function computeSelectivityWeights(
 
   if (vertexIndices.length === 0) return paramNames.map(() => LAMBDA)
 
+  const nVerts = vertexIndices.length
+
   const weights: number[] = []
   for (const name of paramNames) {
     const tangents = tape.forwardTangent(name)
 
-    // Sensitivity of our dragged point
+    // Raw sensitivities (geometric displacement per unit parameter change)
     const dtx = tangents[ptXIdx], dty = tangents[ptYIdx]
     const selfSens = Math.hypot(dtx, dty)
 
-    // Mean sensitivity of all other vertices
     let sumOthers = 0
     for (const v of vertexIndices) {
       sumOthers += Math.hypot(tangents[v.xi], tangents[v.yi])
     }
-    const othersSens = sumOthers / vertexIndices.length
+    const othersSens = sumOthers / nVerts
 
     // selectivity in [0, 1]: high when param selectively affects our point
     const eps = 1e-10
     const selectivity = selfSens / (selfSens + othersSens + eps)
-    // Cubic falloff: selective params (~1) get near-zero penalty,
-    // non-selective params (~0) get full penalty, steeper than linear
-    weights.push(LAMBDA * (1 - selectivity) ** 3)
+
+    // Mean geometric sensitivity across all vertices — measures actual
+    // geometric displacement per unit parameter change. Using this to scale
+    // the L1 penalty makes it reparameterization-invariant: deg:-90..90 with
+    // rotate(deg) costs the same as deg:-5..5 with rotate(deg*16), because
+    // the tangent already absorbs the *16 through the chain rule.
+    const meanSens = (selfSens + sumOthers) / (1 + nVerts)
+
+    // Cubic selectivity falloff, scaled by geometric sensitivity so the
+    // penalty is proportional to actual geometry disruption per unit change
+    weights.push(LAMBDA * (1 - selectivity) ** 3 * meanSens)
   }
 
   return weights
