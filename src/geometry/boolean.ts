@@ -280,6 +280,13 @@ function deduplicateAndFilter(
     if (eqIdx >= 0) {
       const matched = allEdges[eqIdx]
       allEdges.splice(eqIdx, 1)
+      // Both edges occupy the same space — unify lineage from the discarded
+      // edge's endpoints into the kept edge's endpoints so provenance from
+      // both source polygons is preserved (cf. Scala applyPolygonReferences).
+      g.direct(edge.start, matched.start)
+      g.direct(edge.end, matched.end)
+      g.direct(matched.start, edge.start)
+      g.direct(matched.end, edge.end)
       switch (op) {
         case 'union':        edgesOnBoth.push(matched); return
         case 'intersection': edgesOnBoth.push(matched); return
@@ -291,6 +298,11 @@ function deduplicateAndFilter(
     if (revIdx >= 0) {
       const matched = allEdges[revIdx]
       allEdges.splice(revIdx, 1)
+      // Reversed edges share endpoints in opposite order
+      g.direct(edge.start, matched.end)
+      g.direct(edge.end, matched.start)
+      g.direct(matched.start, edge.end)
+      g.direct(matched.end, edge.start)
       switch (op) {
         case 'union':        return
         case 'intersection': return
@@ -433,10 +445,12 @@ function isCollinear(a: SubEdge, b: SubEdge): boolean {
   return Math.abs(dax * dby - day * dbx) < EPS
 }
 
-function mergeCollinearEdges(loop: SubEdge[], g: LineageGraph): SubEdge[] {
-  if (loop.length <= 3) return loop
+type MergedEdge = { subEdge: SubEdge; mergedFrom: SubEdge[] }
 
-  const merged: { subEdge: SubEdge; mergedFrom: SubEdge[] }[] = []
+function mergeCollinearEdges(loop: SubEdge[], g: LineageGraph): MergedEdge[] {
+  if (loop.length <= 3) return loop.map((e) => ({ subEdge: e, mergedFrom: [e] }))
+
+  const merged: MergedEdge[] = []
 
   for (const e of loop) {
     if (merged.length > 0 && isCollinear(merged[merged.length - 1].subEdge, e)) {
@@ -454,26 +468,47 @@ function mergeCollinearEdges(loop: SubEdge[], g: LineageGraph): SubEdge[] {
     merged[0].mergedFrom = [...last.mergedFrom, ...merged[0].mergedFrom]
   }
 
-  return merged.map((m) => m.subEdge)
+  return merged
 }
 
 
 // ---- Output construction with lineage ----
 
 
-function buildOutputPolygon(loop: SubEdge[], g: LineageGraph): PolygonVal {
-  // Copy points so each output polygon has its own Point2Val nodes in the lineage graph
-  const points: Point2Val[] = loop.map((e) => {
-    const pt = createPoint(e.start.x, e.start.y)
-    g.direct(e.start, pt)
+function buildOutputPolygon(mergedLoop: MergedEdge[], g: LineageGraph): PolygonVal {
+  const n = mergedLoop.length
+
+  // Each output vertex is the start of edge[i] AND the end of edge[i-1]. These may be different
+  // Point2Val objects (from different source polygons) that coincide spatially.
+  // We propagate lineage from both to preserve reachability (cf. Scala applyPolygonReferences).
+  const points: Point2Val[] = mergedLoop.map((m, i) => {
+    const pt = createPoint(m.subEdge.start.x, m.subEdge.start.y)
+    g.direct(m.subEdge.start, pt)
+    // Also propagate lineage from the previous merged group's end point
+    const prevMerged = mergedLoop[(i - 1 + n) % n]
+    const prevEnd = prevMerged.subEdge.end
+    if (prevEnd !== m.subEdge.start) {
+      g.direct(prevEnd, pt)
+    }
+    // NOTE: intermediate points consumed by collinear merging (e.g. B in
+    // [A→B, B→C] merged to [A→C]) are dropped. The Scala reference treats
+    // this as an open question and does not propagate their lineage to
+    // surviving vertices. We match that behavior for now.
+    // for (let k = 0; k < m.mergedFrom.length - 1; k++) {
+    //   g.direct(m.mergedFrom[k].end, pt)
+    //   g.direct(m.mergedFrom[k + 1].start, pt)
+    // }
     return pt
   })
 
   const poly = createPolygon(points, g)
 
-  // Apply lineage from source edges
-  for (let i = 0; i < loop.length; i++) {
-    g.direct(loop[i].srcEdge, poly.edges[i])
+  // Propagate indirect lineage from all merged source edges to the output edge,
+  // matching the Scala: lineage(Seq(a, b) -> mergedLine)
+  for (let i = 0; i < mergedLoop.length; i++) {
+    for (const sub of mergedLoop[i].mergedFrom) {
+      g.indirect(sub.srcEdge, poly.edges[i])
+    }
   }
 
   return poly
@@ -544,7 +579,7 @@ export function booleanOperation(
     const merged = mergeCollinearEdges(loop, g)
     const poly = buildOutputPolygon(merged, g)
 
-    const area = signedArea2(merged.map((e) => e.start))
+    const area = signedArea2(merged.map((m) => m.subEdge.start))
     if (area > EPS) positive.push(poly)
     else if (area < -EPS) negative.push(poly)
   }

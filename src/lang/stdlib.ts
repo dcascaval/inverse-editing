@@ -176,77 +176,38 @@ function is3D(v: Value): boolean {
     || v.type === 'planarface3' || v.type === 'face3' || v.type === 'extrusion'
 }
 
-function makeTransformMethod(obj: Value, name: string, g: LineageGraph, tape?: Tape | null): Value {
+function make2DTransformMethod(obj: Value, name: string, g: LineageGraph, tape?: Tape | null): Value {
   const zero = nv(0, tape)
   return {
     type: 'builtin',
     name: `${obj.type}.${name}`,
     fn: (args: Value[]) => {
-      const threeD = is3D(obj)
-
       switch (name) {
         case 'translateX':
-          if (threeD) return transformValue3D(translationMatrix3D(asNumeric(args[0], 'translateX'), zero, zero, tape), obj, g, tape)
           return transformValue(translationMatrix(asNumeric(args[0], 'translateX'), zero, tape), obj, g)
         case 'translateY':
-          if (threeD) return transformValue3D(translationMatrix3D(zero, asNumeric(args[0], 'translateY'), zero, tape), obj, g, tape)
           return transformValue(translationMatrix(zero, asNumeric(args[0], 'translateY'), tape), obj, g)
-        case 'translateZ': {
-          if (!threeD) throw new Error('translateZ: only valid on 3D geometry')
-          return transformValue3D(translationMatrix3D(zero, zero, asNumeric(args[0], 'translateZ'), tape), obj, g, tape)
-        }
         case 'translate': {
-          if (args.length >= 2 && args[0].type === 'point2' && args[1].type === 'number') {
-            const pt = args[0] as Point2Val
-            if (threeD) return transformValue3D(translationMatrix3D(pt.x, pt.y, asNumeric(args[1], 'translate z'), tape), obj, g, tape)
-            return transformValue(translationMatrix(pt.x, pt.y, tape), obj, g)
+          if (args.length >= 2 && args[0].type === 'point2') {
+            return transformValue(translationMatrix((args[0] as Point2Val).x, (args[0] as Point2Val).y, tape), obj, g)
           }
-          const tx = asNumeric(args[0], 'translate x')
-          const ty = asNumeric(args[1], 'translate y')
-          if (threeD) return transformValue3D(translationMatrix3D(tx, ty, zero, tape), obj, g, tape)
-          return transformValue(translationMatrix(tx, ty, tape), obj, g)
+          return transformValue(translationMatrix(asNumeric(args[0], 'translate x'), asNumeric(args[1], 'translate y'), tape), obj, g)
         }
         case 'rotate': {
           if (args.length >= 2 && args[0].type === 'point2') {
-            if (threeD) throw new Error('rotate(center, deg): not supported on 3D geometry, use rotateAxis')
-            return transformValue(rotateAroundMatrix(args[0], asNumeric(args[1], 'rotate deg'), tape), obj, g)
+            return transformValue(rotateAroundMatrix(args[0] as Point2Val, asNumeric(args[1], 'rotate deg'), tape), obj, g)
           }
-          const deg = asNumeric(args[0], 'rotate deg')
-          if (threeD) return transformValue3D(rotateZMatrix3D(deg.toNumber()), obj, g, tape)
-          return transformValue(rotateMatrix(deg, tape), obj, g)
-        }
-        case 'rotateX': {
-          if (!threeD) throw new Error('rotateX: only valid on 3D geometry')
-          return transformValue3D(rotateXMatrix(asNumber(args[0], 'rotateX deg')), obj, g, tape)
-        }
-        case 'rotateY': {
-          if (!threeD) throw new Error('rotateY: only valid on 3D geometry')
-          return transformValue3D(rotateYMatrix(asNumber(args[0], 'rotateY deg')), obj, g, tape)
-        }
-        case 'rotateAxis': {
-          if (!threeD) throw new Error('rotateAxis: only valid on 3D geometry')
-          if (args.length < 2 || args[0].type !== 'edge3')
-            throw new Error('rotateAxis: expected (edge3, degrees)')
-          const line = args[0] as Edge3Val
-          const deg = asNumber(args[1], 'rotateAxis deg')
-          return transformValue3D(
-            rotateAxisMatrix3D(line.start, line.end, deg),
-            obj, g, tape,
-          )
+          return transformValue(rotateMatrix(asNumeric(args[0], 'rotate deg'), tape), obj, g)
         }
         case 'scale': {
           if (args.length >= 2 && args[0].type === 'point2') {
-            if (threeD) throw new Error('scale(center, f): not supported on 3D geometry')
-            return transformValue(scaleAroundMatrix(args[0], asNumeric(args[1], 'scale factor'), tape), obj, g)
+            return transformValue(scaleAroundMatrix(args[0] as Point2Val, asNumeric(args[1], 'scale factor'), tape), obj, g)
           }
-          const fv = asNumeric(args[0], 'scale factor')
-          if (threeD) return transformValue3D(scaleMatrix3D(fv.toNumber()), obj, g, tape)
-          return transformValue(scaleMatrix(fv, tape), obj, g)
+          return transformValue(scaleMatrix(asNumeric(args[0], 'scale factor'), tape), obj, g)
         }
         case 'mirror': {
-          if (threeD) throw new Error('mirror: not yet supported on 3D geometry')
           if (args.length >= 2 && args[0].type === 'point2' && args[1].type === 'point2') {
-            return transformValue(mirrorMatrix(args[0], args[1], tape), obj, g)
+            return transformValue(mirrorMatrix(args[0] as Point2Val, args[1] as Point2Val, tape), obj, g)
           }
           if (args.length >= 1 && args[0].type === 'edge2') {
             return transformValue(mirrorMatrix(args[0].start, args[0].end, tape), obj, g)
@@ -257,16 +218,66 @@ function makeTransformMethod(obj: Value, name: string, g: LineageGraph, tape?: T
           if (args.length < 2 || args[0].type !== 'point2' || args[1].type !== 'point2')
             throw new Error('move: expected (point, point)')
           const a = args[0] as Point2Val, b = args[1] as Point2Val
-          const dx = b.x.sub(a.x)
-          const dy = b.y.sub(a.y)
-          if (threeD) return transformValue3D(translationMatrix3D(dx, dy, zero, tape), obj, g, tape)
-          return transformValue(translationMatrix(dx, dy, tape), obj, g)
+          return transformValue(translationMatrix(b.x.sub(a.x), b.y.sub(a.y), tape), obj, g)
         }
         default:
-          throw new Error(`Unknown transform method: ${name}`)
+          throw new Error(`${name}: only valid on 3D geometry`)
       }
     },
   }
+}
+
+function make3DTransformMethod(obj: Value, name: string, g: LineageGraph, tape?: Tape | null): Value {
+  const zero = nv(0, tape)
+  return {
+    type: 'builtin',
+    name: `${obj.type}.${name}`,
+    fn: (args: Value[]) => {
+      switch (name) {
+        case 'translateX':
+          return transformValue3D(translationMatrix3D(asNumeric(args[0], 'translateX'), zero, zero, tape), obj, g, tape)
+        case 'translateY':
+          return transformValue3D(translationMatrix3D(zero, asNumeric(args[0], 'translateY'), zero, tape), obj, g, tape)
+        case 'translateZ':
+          return transformValue3D(translationMatrix3D(zero, zero, asNumeric(args[0], 'translateZ'), tape), obj, g, tape)
+        case 'translate': {
+          if (args.length >= 2 && args[0].type === 'point2' && args[1].type === 'number') {
+            const pt = args[0] as Point2Val
+            return transformValue3D(translationMatrix3D(pt.x, pt.y, asNumeric(args[1], 'translate z'), tape), obj, g, tape)
+          }
+          return transformValue3D(translationMatrix3D(asNumeric(args[0], 'translate x'), asNumeric(args[1], 'translate y'), zero, tape), obj, g, tape)
+        }
+        case 'rotate':
+          return transformValue3D(rotateZMatrix3D(asNumeric(args[0], 'rotate deg').toNumber()), obj, g, tape)
+        case 'rotateX':
+          return transformValue3D(rotateXMatrix(asNumber(args[0], 'rotateX deg')), obj, g, tape)
+        case 'rotateY':
+          return transformValue3D(rotateYMatrix(asNumber(args[0], 'rotateY deg')), obj, g, tape)
+        case 'rotateAxis': {
+          if (args.length < 2 || args[0].type !== 'edge3')
+            throw new Error('rotateAxis: expected (edge3, degrees)')
+          const line = args[0] as Edge3Val
+          return transformValue3D(rotateAxisMatrix3D(line.start, line.end, asNumber(args[1], 'rotateAxis deg')), obj, g, tape)
+        }
+        case 'scale':
+          return transformValue3D(scaleMatrix3D(asNumeric(args[0], 'scale factor').toNumber()), obj, g, tape)
+        case 'move': {
+          if (args.length < 2 || args[0].type !== 'point2' || args[1].type !== 'point2')
+            throw new Error('move: expected (point, point)')
+          const a = args[0] as Point2Val, b = args[1] as Point2Val
+          return transformValue3D(translationMatrix3D(b.x.sub(a.x), b.y.sub(a.y), zero, tape), obj, g, tape)
+        }
+        default:
+          throw new Error(`${name}: not yet supported on 3D geometry`)
+      }
+    },
+  }
+}
+
+function makeTransformMethod(obj: Value, name: string, g: LineageGraph, tape?: Tape | null): Value {
+  return is3D(obj)
+    ? make3DTransformMethod(obj, name, g, tape)
+    : make2DTransformMethod(obj, name, g, tape)
 }
 
 const transformMethods = new Set([

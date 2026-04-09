@@ -196,3 +196,33 @@ draw(query(b.points, contains(from(a.top))))`)
     expect(count).toBe(2)
   })
 })
+
+
+// Lineage through boolean operations
+
+
+describe('lineage through booleans', () => {
+  it('chained union preserves lineage for chamfer query', () => {
+    // Regression: query(u.points, from(r3.top)) must find both endpoints of r3.top
+    // in the union result, even through chained unions where duplicate collinear edges
+    // are resolved. Both (42.5, 75) and (17.5, 75) must be reachable from r3.top.
+    const count = drawnPointCount(`parameters {
+  w1: 20
+  w2: 7.5
+  h1: 6.5
+  h2: 25
+  h3: 7.5
+  w3: 25
+  w4: 20
+}
+base = pt(5, 50)
+r1 = rect(base, w1, h1)
+r2 = rect(r1.bottomRight, -w2, h2)
+r3 = rect(r2.topLeft, w3, -h3)
+r4 = rect(r3.topRight, -w2, -h2)
+r5 = rect(r4.bottomLeft, w4, h1)
+u = union(r1, union(r2, union(r3, union(r4, r5))))
+draw(query(u.points, from(r3.top)))`)
+    expect(count).toBe(2)
+  })
+})
