@@ -62,7 +62,7 @@ describe('buildDragSession', () => {
     const edges = result.drawBuffer.batches.flatMap((b) => b.edges)
 
     const hit = findClosestEdge(edges, 2.5, 0)!
-    const session = buildDragSession(result.tape!, hit.edge, hit.t, 2.5, 0)
+    const session = buildDragSession(result.tape!, hit.edge, hit.t, 2.5, 0, edges)
 
     expect(session.subTape).toBeDefined()
     expect(session.paramNames).toContain('x')
@@ -90,7 +90,7 @@ describe('optimizeDrag', () => {
     const hit = findClosestEdge(edges, 10, 0)!
     expect(hit.t).toBeCloseTo(1, 1)
 
-    const session = buildDragSession(result.tape!, hit.edge, hit.t, 10, 0)
+    const session = buildDragSession(result.tape!, hit.edge, hit.t, 10, 0, edges)
     await optimizeDrag(session, 15, 0)
 
     // w should have moved toward 15

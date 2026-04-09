@@ -194,7 +194,7 @@ function DraggableBatches({
       if (!hit) return
 
       e.stopPropagation()
-      const session = buildDragSession(tape, hit.edge, hit.t, pt.x, pt.y)
+      const session = buildDragSession(tape, hit.edge, hit.t, pt.x, pt.y, allEdges)
       sessionRef.current = session
     },
     // onUpdate: optimize toward drag target

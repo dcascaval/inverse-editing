@@ -76,16 +76,16 @@ export function translationMatrix(tx: NumericValue, ty: NumericValue, tape?: Tap
   return affine(1, 0, 0, 1, tx, ty, tape)
 }
 
-export function rotateMatrix(degrees: number, tape?: Tape | null): Affine2D {
-  const r = degrees * Math.PI / 180
-  const c = Math.cos(r), s = Math.sin(r)
+export function rotateMatrix(degrees: NumericValue, tape?: Tape | null): Affine2D {
+  const r = degrees.mul(nv(Math.PI / 180, tape))
+  const c = r.cos(), s = r.sin()
   const zero = nv(0, tape)
-  return affine(c, s, -s, c, zero, zero, tape)
+  return { a: c, b: s, c: s.neg(), d: c, tx: zero, ty: zero }
 }
 
-export function scaleMatrix(f: number, tape?: Tape | null): Affine2D {
+export function scaleMatrix(f: NumericValue, tape?: Tape | null): Affine2D {
   const zero = nv(0, tape)
-  return affine(f, 0, 0, f, zero, zero, tape)
+  return { a: f, b: zero, c: zero, d: f, tx: zero, ty: zero }
 }
 
 function aroundCenter(center: Point2Val, inner: Affine2D, tape?: Tape | null): Affine2D {
@@ -94,23 +94,25 @@ function aroundCenter(center: Point2Val, inner: Affine2D, tape?: Tape | null): A
   return compose(post, compose(inner, pre))
 }
 
-export function rotateAroundMatrix(center: Point2Val, degrees: number, tape?: Tape | null): Affine2D {
+export function rotateAroundMatrix(center: Point2Val, degrees: NumericValue, tape?: Tape | null): Affine2D {
   return aroundCenter(center, rotateMatrix(degrees, tape), tape)
 }
 
-export function scaleAroundMatrix(center: Point2Val, f: number, tape?: Tape | null): Affine2D {
+export function scaleAroundMatrix(center: Point2Val, f: NumericValue, tape?: Tape | null): Affine2D {
   return aroundCenter(center, scaleMatrix(f, tape), tape)
 }
 
 export function mirrorMatrix(p1: Point2Val, p2: Point2Val, tape?: Tape | null): Affine2D {
-  const dx = p2.x.toNumber() - p1.x.toNumber()
-  const dy = p2.y.toNumber() - p1.y.toNumber()
-  const len2 = dx * dx + dy * dy
-  if (len2 === 0) throw new Error('mirror: two distinct points required')
-  const cos2 = (dx * dx - dy * dy) / len2
-  const sin2 = 2 * dx * dy / len2
+  const dx = p2.x.sub(p1.x)
+  const dy = p2.y.sub(p1.y)
+  const len2 = dx.mul(dx).add(dy.mul(dy))
+  if (len2.toNumber() === 0) throw new Error('mirror: two distinct points required')
+  // cos(2θ) = (dx²-dy²)/len², sin(2θ) = 2·dx·dy/len²
+  const cos2 = dx.mul(dx).sub(dy.mul(dy)).div(len2)
+  const sin2 = dx.mul(dy).mul(nv(2, tape)).div(len2)
   const zero = nv(0, tape)
-  return aroundCenter(p1, affine(cos2, sin2, sin2, -cos2, zero, zero, tape), tape)
+  const inner: Affine2D = { a: cos2, b: sin2, c: sin2, d: cos2.neg(), tx: zero, ty: zero }
+  return aroundCenter(p1, inner, tape)
 }
 
 

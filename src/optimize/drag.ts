@@ -18,6 +18,8 @@ export type DragSession = {
   initialParams: Map<string, number>
   /** Current optimized point position (for yellow dot) */
   optimizedPoint: { x: number; y: number } | null
+  /** Per-parameter regularization weights (selectivity-based) */
+  paramWeights: number[]
 }
 
 /** Find the closest edge to a world-space point. Returns the edge and t in [0,1]. */
@@ -49,15 +51,81 @@ export function findClosestEdge(
 }
 
 
-/* L1 Reg. Weight */
-const LAMBDA = 0.1
+/* Base regularization weight */
+const LAMBDA = 0.5;
+
+/**
+ * Compute per-parameter selectivity weights using forward-mode tangent passes.
+ *
+ * For each parameter, we measure:
+ * - selfSens: how much it moves the dragged point (ptX, ptY)
+ * - othersSens: how much it moves all other vertices in the scene
+ *
+ * Weight is high when a parameter moves other vertices without affecting ours
+ * (discourage changing it), and low when it selectively affects our point
+ * (encourage changing it).
+ */
+function computeSelectivityWeights(
+  tape: Tape,
+  paramNames: string[],
+  ptXIdx: number,
+  ptYIdx: number,
+  allEdges: AnnotatedEdge2[],
+): number[] {
+  // Collect unique vertex position node indices from all edges
+  const vertexIndices: { xi: number; yi: number }[] = []
+  const seen = new Set<number>()
+  for (const edge of allEdges) {
+    for (const src of [edge.sourceStart, edge.sourceEnd]) {
+      if (!src) continue
+      const sx = src.x, sy = src.y
+      if (sx instanceof DualValue && sy instanceof DualValue) {
+        if (!seen.has(sx.index)) {
+          seen.add(sx.index)
+          vertexIndices.push({ xi: sx.index, yi: sy.index })
+        }
+      }
+    }
+  }
+
+  if (vertexIndices.length === 0) return paramNames.map(() => LAMBDA)
+
+  const weights: number[] = []
+  for (const name of paramNames) {
+    const tangents = tape.forwardTangent(name)
+
+    // Sensitivity of our dragged point
+    const dtx = tangents[ptXIdx], dty = tangents[ptYIdx]
+    const selfSens = Math.hypot(dtx, dty)
+
+    // Mean sensitivity of all other vertices
+    let sumOthers = 0
+    for (const v of vertexIndices) {
+      sumOthers += Math.hypot(tangents[v.xi], tangents[v.yi])
+    }
+    const othersSens = sumOthers / vertexIndices.length
+
+    // selectivity in [0, 1]: high when param selectively affects our point
+    const eps = 1e-10
+    const selectivity = selfSens / (selfSens + othersSens + eps)
+    // Cubic falloff: selective params (~1) get near-zero penalty,
+    // non-selective params (~0) get full penalty, steeper than linear
+    weights.push(LAMBDA * (1 - selectivity) ** 3)
+  }
+
+  return weights
+}
 
 /**
  * Build the optimization objective on the tape and extract a sub-tape.
  *
- * Loss = |evaluateAt(segment, t) - target|^2 + lambda * sum(|p_i - p0_i|)
+ * Loss = |evaluateAt(segment, t) - target|^2 + sum(w_i * |p_i - p0_i|)
  *
  * evaluateAt = start + (end - start) * t
+ *
+ * Per-parameter weights w_i are computed via forward-mode tangent analysis:
+ * parameters that selectively affect the dragged point get low regularization,
+ * while parameters that mostly affect other geometry get high regularization.
  *
  * The target x/y are registered as pseudo-parameters (__targetX, __targetY) so
  * they can be updated via the params map on each drag move without rebuilding.
@@ -70,6 +138,7 @@ export function buildDragSession(
   t: number,
   targetX: number,
   targetY: number,
+  allEdges: AnnotatedEdge2[],
 ): DragSession {
   const start = edge.sourceStart!
   const end = edge.sourceEnd!
@@ -94,7 +163,7 @@ export function buildDragSession(
   const dyVal = ptY.sub(tyVal)
   let loss = dxVal.mul(dxVal).add(dyVal.mul(dyVal))
 
-  // L1 regularization: lambda * sum(|p_i - p0_i|)
+  // Identify program parameters (exclude pseudo-params)
   const paramNames: string[] = [...tape.paramIndices.keys()].filter(
     (n) => !n.startsWith('__'),
   )
@@ -103,14 +172,19 @@ export function buildDragSession(
     initialParams.set(s.name, s.value)
   }
 
-  if (LAMBDA > 0) {
-    for (const name of paramNames) {
-      const paramIdx = tape.paramIndices.get(name)!
-      const paramVal = new DualValue(tape, paramIdx)
-      const p0 = dual(tape, initialParams.get(name) ?? 0)
-      const diff = paramVal.sub(p0).abs()
-      loss = loss.add(diff.mul(dual(tape, LAMBDA)))
-    }
+  // Compute selectivity-based regularization weights via forward tangent passes
+  const paramWeights = computeSelectivityWeights(tape, paramNames, ptX.index, ptY.index, allEdges)
+
+  // Weighted L1 regularization: sum(w_i * |p_i - p0_i|)
+  for (let i = 0; i < paramNames.length; i++) {
+    const w = paramWeights[i]
+    if (w <= 0) continue
+    const name = paramNames[i]
+    const paramIdx = tape.paramIndices.get(name)!
+    const paramVal = new DualValue(tape, paramIdx)
+    const p0 = dual(tape, initialParams.get(name) ?? 0)
+    const diff = paramVal.sub(p0).abs()
+    loss = loss.add(diff.mul(dual(tape, w)))
   }
 
   // Register computed nodes as pseudo-params so their sub-tape indices are tracked.
@@ -134,6 +208,7 @@ export function buildDragSession(
     paramNames,
     initialParams,
     optimizedPoint: null,
+    paramWeights,
   }
 }
 

@@ -61,6 +61,16 @@ export class DualValue implements NumericValue<DualValue> {
       OpKind.Abs, this.index, Math.abs(this.primal)))
   }
 
+  sin(): DualValue {
+    return new DualValue(this.tape, this.tape.pushUnary(
+      OpKind.Sin, this.index, Math.sin(this.primal)))
+  }
+
+  cos(): DualValue {
+    return new DualValue(this.tape, this.tape.pushUnary(
+      OpKind.Cos, this.index, Math.cos(this.primal)))
+  }
+
   min(other: DualValue): DualValue {
     return new DualValue(this.tape, this.tape.pushBinary(
       OpKind.Min, this.index, other.index, Math.min(this.primal, other.primal)))
@@ -126,6 +136,8 @@ export enum OpKind {
   Pow,
   Neg,
   Abs,
+  Sin,
+  Cos,
   Min,
   Max,
 }
@@ -223,6 +235,8 @@ export class Tape {
         case OpKind.Pow: node.primal = a ** b; break
         case OpKind.Neg: node.primal = -a; break
         case OpKind.Abs: node.primal = Math.abs(a); break
+        case OpKind.Sin: node.primal = Math.sin(a); break
+        case OpKind.Cos: node.primal = Math.cos(a); break
         case OpKind.Min: node.primal = Math.min(a, b); break
         case OpKind.Max: node.primal = Math.max(a, b); break
       }
@@ -246,6 +260,65 @@ export class Tape {
     this.reset()
     this.backward(this.nodes.length - 1)
     return loss
+  }
+
+  /**
+   * Forward-mode tangent pass: seed one parameter with tangent 1, propagate
+   * through the tape. Returns tangent values at all nodes.
+   * Uses stored primals — no re-evaluation needed.
+   */
+  forwardTangent(paramName: string): Float64Array {
+    const tangents = new Float64Array(this.nodes.length)
+    const pIdx = this.paramIndices.get(paramName)
+    if (pIdx === undefined) return tangents
+    tangents[pIdx] = 1
+
+    const n = this.nodes
+    for (let i = 0; i < n.length; i++) {
+      const node = n[i]
+      if (node.op === OpKind.Const) continue
+      const da = tangents[node.inputA]
+      const db = node.inputB >= 0 ? tangents[node.inputB] : 0
+      switch (node.op) {
+        case OpKind.Add: tangents[i] = da + db; break
+        case OpKind.Sub: tangents[i] = da - db; break
+        case OpKind.Mul: {
+          const ap = n[node.inputA].primal
+          const bp = n[node.inputB].primal
+          tangents[i] = da * bp + ap * db; break
+        }
+        case OpKind.Div: {
+          const ap = n[node.inputA].primal
+          const bp = n[node.inputB].primal
+          tangents[i] = (da * bp - ap * db) / (bp * bp); break
+        }
+        case OpKind.Mod: {
+          const ap = n[node.inputA].primal
+          const bp = n[node.inputB].primal
+          tangents[i] = da - db * Math.floor(ap / bp); break
+        }
+        case OpKind.Pow: {
+          const ap = n[node.inputA].primal
+          const bp = n[node.inputB].primal
+          tangents[i] = da * bp * ap ** (bp - 1) + db * ap ** bp * Math.log(ap); break
+        }
+        case OpKind.Neg: tangents[i] = -da; break
+        case OpKind.Abs: tangents[i] = da * Math.sign(n[node.inputA].primal); break
+        case OpKind.Sin: tangents[i] = da * Math.cos(n[node.inputA].primal); break
+        case OpKind.Cos: tangents[i] = da * -Math.sin(n[node.inputA].primal); break
+        case OpKind.Min: {
+          const ap = n[node.inputA].primal
+          const bp = n[node.inputB].primal
+          tangents[i] = ap <= bp ? da : db; break
+        }
+        case OpKind.Max: {
+          const ap = n[node.inputA].primal
+          const bp = n[node.inputB].primal
+          tangents[i] = ap >= bp ? da : db; break
+        }
+      }
+    }
+    return tangents
   }
 }
 
@@ -310,6 +383,18 @@ function backwardPass(nodes: TapeNode[], from: number): void {
       case OpKind.Abs: {
         const xp = nodes[node.inputA].primal
         nodes[node.inputA].adjoint += a * Math.sign(xp)
+        break
+      }
+
+      case OpKind.Sin: {
+        const xp = nodes[node.inputA].primal
+        nodes[node.inputA].adjoint += a * Math.cos(xp)
+        break
+      }
+
+      case OpKind.Cos: {
+        const xp = nodes[node.inputA].primal
+        nodes[node.inputA].adjoint += a * -Math.sin(xp)
         break
       }
 

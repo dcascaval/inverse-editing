@@ -206,10 +206,10 @@ function makeTransformMethod(obj: Value, name: string, g: LineageGraph, tape?: T
         case 'rotate': {
           if (args.length >= 2 && args[0].type === 'point2') {
             if (threeD) throw new Error('rotate(center, deg): not supported on 3D geometry, use rotateAxis')
-            return transformValue(rotateAroundMatrix(args[0], asNumber(args[1], 'rotate deg'), tape), obj, g)
+            return transformValue(rotateAroundMatrix(args[0], asNumeric(args[1], 'rotate deg'), tape), obj, g)
           }
-          const deg = asNumber(args[0], 'rotate deg')
-          if (threeD) return transformValue3D(rotateZMatrix3D(deg), obj, g, tape)
+          const deg = asNumeric(args[0], 'rotate deg')
+          if (threeD) return transformValue3D(rotateZMatrix3D(deg.toNumber()), obj, g, tape)
           return transformValue(rotateMatrix(deg, tape), obj, g)
         }
         case 'rotateX': {
@@ -234,11 +234,11 @@ function makeTransformMethod(obj: Value, name: string, g: LineageGraph, tape?: T
         case 'scale': {
           if (args.length >= 2 && args[0].type === 'point2') {
             if (threeD) throw new Error('scale(center, f): not supported on 3D geometry')
-            return transformValue(scaleAroundMatrix(args[0], asNumber(args[1], 'scale factor'), tape), obj, g)
+            return transformValue(scaleAroundMatrix(args[0], asNumeric(args[1], 'scale factor'), tape), obj, g)
           }
-          const f = asNumber(args[0], 'scale factor')
-          if (threeD) return transformValue3D(scaleMatrix3D(f), obj, g, tape)
-          return transformValue(scaleMatrix(f, tape), obj, g)
+          const fv = asNumeric(args[0], 'scale factor')
+          if (threeD) return transformValue3D(scaleMatrix3D(fv.toNumber()), obj, g, tape)
+          return transformValue(scaleMatrix(fv, tape), obj, g)
         }
         case 'mirror': {
           if (threeD) throw new Error('mirror: not yet supported on 3D geometry')
