@@ -75,6 +75,7 @@ const REFERENCE: { heading: string; entries: { name: string; desc: string; overl
     heading: 'Other',
     entries: [
       { name: 'tabulate', desc: 'Generate array via function', overloads: ['(n, fn)'] },
+      { name: 'map', desc: 'Map function over array', overloads: ['(array, (x) => ...)', '(array, (x, i) => ...)'] },
       { name: 'chamfer', desc: 'Chamfer polygon corners', overloads: ['(polygon, points, radius)'] },
       { name: 'single', desc: 'Assert array has one element', overloads: ['(array)'] },
       { name: 'empty', desc: 'Assert array is empty', overloads: ['(array)'] },

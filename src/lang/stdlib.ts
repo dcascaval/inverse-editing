@@ -379,6 +379,21 @@ export function getProperty(obj: Value, prop: string, g: LineageGraph, tape?: Ta
           return createNull()
         },
       }
+      if (prop === 'map') return {
+        type: 'builtin', name: 'array.map',
+        fn: (args, apply) => {
+          if (args.length !== 1 || args[0].type !== 'lambda')
+            throw new Error('map: expected a lambda argument')
+          const fn = args[0]
+          const elements: Value[] = []
+          for (let i = 0; i < obj.elements.length; i++) {
+            const fnArgs: Value[] = [obj.elements[i]]
+            if (fn.params.length >= 2) fnArgs.push(createNumber(i, tape))
+            elements.push(apply(fn, fnArgs))
+          }
+          return { type: 'array', elements }
+        },
+      }
       break
     }
     case 'point3':
@@ -820,6 +835,20 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph, tape?: Tape | nul
     }
     return { type: 'array', elements }
   }, 'Tabulate')
+
+  register('map', (args, apply) => {
+    if (args.length !== 2) throw new Error('map: expected (array, fn)')
+    if (args[0].type !== 'array') throw new Error('map: first argument must be an array')
+    const fn = args[1]
+    if (fn.type !== 'lambda') throw new Error('map: second argument must be a lambda')
+    const elements: Value[] = []
+    for (let i = 0; i < args[0].elements.length; i++) {
+      const fnArgs: Value[] = [args[0].elements[i]]
+      if (fn.params.length >= 2) fnArgs.push(createNumber(i, tape))
+      elements.push(apply(fn, fnArgs))
+    }
+    return { type: 'array', elements }
+  })
 
   // 3D: Extrude3D
 

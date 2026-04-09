@@ -494,6 +494,53 @@ draw(query(h2.edges, from(hex.edges.0)))`)
 })
 
 
+// Map
+
+
+describe('map', () => {
+  it('maps a function over an array', () => {
+    const { points } = drawn(`parameters {}
+a = tabulate(3, i => pt(i, 0))
+draw(map(a, p => p.translate(0, 10)))`)
+    approxPt(points[0], 0, 10)
+    approxPt(points[1], 1, 10)
+    approxPt(points[2], 2, 10)
+  })
+
+  it('provides index as optional second argument', () => {
+    const { points } = drawn(`parameters {}
+a = tabulate(3, i => pt(i, 0))
+draw(map(a, (p, i) => p.translate(0, i * 5)))`)
+    approxPt(points[0], 0, 0)
+    approxPt(points[1], 1, 5)
+    approxPt(points[2], 2, 10)
+  })
+
+  it('works with single-param lambda (index ignored)', () => {
+    const count = drawnPointCount(`parameters {}
+a = tabulate(4, i => pt(i, i))
+draw(map(a, p => pt(p.x * 2, p.y)))`)
+    expect(count).toBe(4)
+  })
+
+  it('chains as a method: .map().map()', () => {
+    const { points } = drawn(`parameters {}
+draw(tabulate(3, i => pt(i, 0)).map(p => p.translate(0, 1)).map(p => p.translate(10, 0)))`)
+    approxPt(points[0], 10, 1)
+    approxPt(points[1], 11, 1)
+    approxPt(points[2], 12, 1)
+  })
+
+  it('method form supports index argument', () => {
+    const { points } = drawn(`parameters {}
+draw(tabulate(3, i => pt(i, 0)).map((p, i) => p.translate(0, i)))`)
+    approxPt(points[0], 0, 0)
+    approxPt(points[1], 1, 1)
+    approxPt(points[2], 2, 2)
+  })
+})
+
+
 // Tabulate
 
 
