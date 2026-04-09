@@ -11,6 +11,16 @@ import nlopt from '@/vendor/nlopt'
 import { useStore, type VertexLock } from '@/store'
 import { rerunProgram } from '@/execute'
 
+
+/* Base regularization weight */
+const LAMBDA = 0.5;
+
+/** Use log-sum (concave, sparsity-inducing) vs standard L1 regularization */
+const USE_LOG_SUM_REG = false;
+
+/** Relative weight of lock constraints vs the drag target */
+const LOCK_WEIGHT = 20.0
+
 export type DragSession = {
   /** Compact sub-tape for the optimization objective */
   subTape: Tape
@@ -24,8 +34,6 @@ export type DragSession = {
   paramWeights: number[]
 }
 
-/** Relative weight of lock constraints vs the drag target */
-export const LOCK_WEIGHT = 1.0
 
 /** Find the closest edge to a world-space point. Returns the edge and t in [0,1]. */
 export function findClosestEdge(
@@ -60,15 +68,18 @@ export function findClosestEdge(
 export function collectVertices(
   allEdges: AnnotatedEdge2[],
 ): { pt: Point2Val; x: number; y: number }[] {
-  const seen = new Set<number>()
+  const seen = new Set<string>()
   const result: { pt: Point2Val; x: number; y: number }[] = []
   for (const edge of allEdges) {
     for (const src of [edge.sourceStart, edge.sourceEnd]) {
       if (!src) continue
       const sx = src.x, sy = src.y
-      if (sx instanceof DualValue && sy instanceof DualValue && !seen.has(sx.index)) {
-        seen.add(sx.index)
-        result.push({ pt: src, x: sx.toNumber(), y: sy.toNumber() })
+      if (sx instanceof DualValue && sy instanceof DualValue) {
+        const key = `${sx.index},${sy.index}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          result.push({ pt: src, x: sx.toNumber(), y: sy.toNumber() })
+        }
       }
     }
   }
@@ -123,11 +134,6 @@ export function resolveLocks(
   useStore.setState({ locks: updated })
 }
 
-/* Base regularization weight */
-const LAMBDA = 0.5;
-
-/** Use log-sum (concave, sparsity-inducing) vs standard L1 regularization */
-const USE_LOG_SUM_REG = false;
 
 /**
  * Compute per-parameter selectivity weights using forward-mode tangent passes.
@@ -149,14 +155,15 @@ function computeSelectivityWeights(
 ): number[] {
   // Collect unique vertex position node indices from all edges
   const vertexIndices: { xi: number; yi: number }[] = []
-  const seen = new Set<number>()
+  const seen = new Set<string>()
   for (const edge of allEdges) {
     for (const src of [edge.sourceStart, edge.sourceEnd]) {
       if (!src) continue
       const sx = src.x, sy = src.y
       if (sx instanceof DualValue && sy instanceof DualValue) {
-        if (!seen.has(sx.index)) {
-          seen.add(sx.index)
+        const key = `${sx.index},${sy.index}`
+        if (!seen.has(key)) {
+          seen.add(key)
           vertexIndices.push({ xi: sx.index, yi: sy.index })
         }
       }
