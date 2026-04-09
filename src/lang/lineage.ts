@@ -49,6 +49,59 @@ export class LineageGraph {
   private directParents = new Map<Value, Value[]>()
   private allParents = new Map<Value, Value[]>()
 
+  /** Root primitive registry: value -> sequential index */
+  private rootIndex = new Map<Value, number>()
+  private rootCount = 0
+
+  /** Mark a value as a root primitive, assigning it the next sequential index. */
+  markRoot(v: Value): void {
+    this.rootIndex.set(v, this.rootCount++)
+  }
+
+  /** Get the root primitive index for a value, or undefined if not a root. */
+  getRootIndex(v: Value): number | undefined {
+    return this.rootIndex.get(v)
+  }
+
+  /**
+   * BFS toward ancestors via direct lineage, collecting all root primitive
+   * indices reachable from the given value.
+   */
+  findRootIndices(start: Value): Set<number> {
+    const result = new Set<number>()
+    const idx = this.rootIndex.get(start)
+    if (idx !== undefined) result.add(idx)
+    const seen = new Set<Value>()
+    const queue: Value[] = [start]
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      if (seen.has(current)) continue
+      seen.add(current)
+      const ps = this.directParents.get(current)
+      if (!ps) continue
+      for (const p of ps) {
+        const pi = this.rootIndex.get(p)
+        if (pi !== undefined) result.add(pi)
+        if (!seen.has(p)) queue.push(p)
+      }
+    }
+    return result
+  }
+
+  /**
+   * Find all values in the collection whose direct-lineage root primitive
+   * indices are a superset of the given set.
+   */
+  findByRootIndices(collection: Value[], indices: Set<number>): Value[] {
+    return collection.filter((v) => {
+      const roots = this.findRootIndices(v)
+      for (const idx of indices) {
+        if (!roots.has(idx)) return false
+      }
+      return true
+    })
+  }
+
   direct(parents: Value | Value[], children: Value | Value[]) {
     this.link(parents, children, 'direct')
   }

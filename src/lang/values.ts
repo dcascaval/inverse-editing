@@ -219,10 +219,23 @@ export function createRectangle(
   bl: Point2Val, br: Point2Val, tl: Point2Val, tr: Point2Val,
   g: LineageGraph,
 ): RectangleVal {
+  // Mark corner points as root primitives (stable sequential indices)
+  g.markRoot(bl)
+  g.markRoot(br)
+  g.markRoot(tl)
+  g.markRoot(tr)
+
   const bottom = createEdge(bl, br, g)
   const right = createEdge(br, tr, g)
   const top = createEdge(tr, tl, g)
   const left = createEdge(tl, bl, g)
+
+  // Mark edges as root primitives
+  g.markRoot(bottom)
+  g.markRoot(right)
+  g.markRoot(top)
+  g.markRoot(left)
+
   const xs = [bl.x, br.x, tl.x, tr.x]
   const ys = [bl.y, br.y, tl.y, tr.y]
   const xMin = xs.reduce((a, b) => a.min(b))

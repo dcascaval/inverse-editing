@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { DrawBatch } from '@/lang/interpreter'
 import type { Tape } from '@/lang/grad'
+import type { LineageGraph } from '@/lang/lineage'
 
 export type Slider = {
   name: string
@@ -42,6 +43,16 @@ type Store = {
   tape: Tape | null
   setTape: (tape: Tape | null) => void
 
+  // Lineage graph (not persisted)
+  lineage: LineageGraph | null
+  setLineage: (g: LineageGraph | null) => void
+
+  // Vertex locks (not persisted — cleared on program change)
+  locks: VertexLock[]
+  addLock: (lock: VertexLock) => void
+  removeLock: (rootIndices: Set<number>) => void
+  clearLocks: () => void
+
   // Error (not persisted)
   error: string | null
   setError: (error: string | null) => void
@@ -49,6 +60,17 @@ type Store = {
   // Camera mode (not persisted)
   cameraMode: '2d' | '3d'
   setCameraMode: (mode: '2d' | '3d') => void
+}
+
+/** A locked vertex identified by its root primitive lineage */
+export type VertexLock = {
+  /** Root primitive indices that identify this vertex via lineage */
+  rootIndices: Set<number>
+  /** Tape node indices for x/y (valid for current tape only, updated on re-execution) */
+  tapeXIdx: number
+  tapeYIdx: number
+  /** Whether this lock resolved to an actual output vertex on last re-execution */
+  active: boolean
 }
 
 const DEFAULT_CODE = 'parameters {\n}\n'
@@ -114,6 +136,23 @@ export const useStore = create<Store>()(
 
       tape: null,
       setTape: (tape) => set({ tape }),
+
+      lineage: null,
+      setLineage: (lineage) => set({ lineage }),
+
+      locks: [],
+      addLock: (lock) => set((s) => ({ locks: [...s.locks, lock] })),
+      removeLock: (rootIndices) =>
+        set((s) => ({
+          locks: s.locks.filter((l) => {
+            if (l.rootIndices.size !== rootIndices.size) return true
+            for (const idx of rootIndices) {
+              if (!l.rootIndices.has(idx)) return true
+            }
+            return false
+          }),
+        })),
+      clearLocks: () => set({ locks: [] }),
 
       error: null,
       setError: (error) => set({ error }),

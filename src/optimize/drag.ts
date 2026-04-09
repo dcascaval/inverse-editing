@@ -5,8 +5,10 @@
 
 import type { AnnotatedEdge2 } from '@/lang/interpreter'
 import { DualValue, dual, extractSubTape, type Tape } from '@/lang/grad'
+import type { LineageGraph } from '@/lang/lineage'
+import type { Point2Val } from '@/lang/values'
 import nlopt from '@/vendor/nlopt'
-import { useStore } from '@/store'
+import { useStore, type VertexLock } from '@/store'
 import { rerunProgram } from '@/execute'
 
 export type DragSession = {
@@ -21,6 +23,9 @@ export type DragSession = {
   /** Per-parameter regularization weights (selectivity-based) */
   paramWeights: number[]
 }
+
+/** Relative weight of lock constraints vs the drag target */
+export const LOCK_WEIGHT = 1.0
 
 /** Find the closest edge to a world-space point. Returns the edge and t in [0,1]. */
 export function findClosestEdge(
@@ -50,6 +55,73 @@ export function findClosestEdge(
   return best
 }
 
+
+/** Collect unique vertices (Point2Val with DualValue coords) from all edges. */
+export function collectVertices(
+  allEdges: AnnotatedEdge2[],
+): { pt: Point2Val; x: number; y: number }[] {
+  const seen = new Set<number>()
+  const result: { pt: Point2Val; x: number; y: number }[] = []
+  for (const edge of allEdges) {
+    for (const src of [edge.sourceStart, edge.sourceEnd]) {
+      if (!src) continue
+      const sx = src.x, sy = src.y
+      if (sx instanceof DualValue && sy instanceof DualValue && !seen.has(sx.index)) {
+        seen.add(sx.index)
+        result.push({ pt: src, x: sx.toNumber(), y: sy.toNumber() })
+      }
+    }
+  }
+  return result
+}
+
+/**
+ * Re-resolve locks after program re-execution.
+ * For each lock, find the output vertex whose root lineage matches,
+ * and update its tape indices.
+ */
+export function resolveLocks(
+  allEdges: AnnotatedEdge2[],
+  lineage: LineageGraph,
+  tape: Tape,
+): void {
+  const store = useStore.getState()
+  const locks = store.locks
+  if (locks.length === 0) return
+
+  const vertices = collectVertices(allEdges)
+  const updated: VertexLock[] = []
+
+  for (const lock of locks) {
+    // Find a vertex whose direct-lineage root indices match this lock
+    let found = false
+    for (const v of vertices) {
+      const roots = lineage.findRootIndices(v.pt)
+      if (roots.size !== lock.rootIndices.size) continue
+      let match = true
+      for (const idx of lock.rootIndices) {
+        if (!roots.has(idx)) { match = false; break }
+      }
+      if (match) {
+        updated.push({
+          rootIndices: lock.rootIndices,
+          tapeXIdx: (v.pt.x as DualValue).index,
+          tapeYIdx: (v.pt.y as DualValue).index,
+          active: true,
+        })
+        found = true
+        break
+      }
+    }
+    if (!found) {
+      // Keep the lock with stale indices — it's inert but not cleared
+      updated.push({ ...lock, active: false })
+    }
+  }
+
+  // Only update if something changed
+  useStore.setState({ locks: updated })
+}
 
 /* Base regularization weight */
 const LAMBDA = 0.5;
@@ -215,6 +287,23 @@ export function buildDragSession(
       const p0 = dual(tape, initialParams.get(name) ?? 0)
       const diff = paramVal.sub(p0).abs()
       loss = loss.add(diff.mul(dual(tape, w)))
+    }
+  }
+
+  // Lock constraints: only include locks resolved to actual output vertices
+  const locks = useStore.getState().locks
+  const activeLocks = locks.filter((l) => l.active)
+  if (activeLocks.length > 0) {
+    const w = dual(tape, LOCK_WEIGHT / activeLocks.length)
+    for (const lock of activeLocks) {
+      const lockX = new DualValue(tape, lock.tapeXIdx)
+      const lockY = new DualValue(tape, lock.tapeYIdx)
+      // Target is the vertex's current position (at drag start)
+      const lockTargetX = dual(tape, tape.nodes[lock.tapeXIdx].primal)
+      const lockTargetY = dual(tape, tape.nodes[lock.tapeYIdx].primal)
+      const ldx = lockX.sub(lockTargetX)
+      const ldy = lockY.sub(lockTargetY)
+      loss = loss.add(ldx.mul(ldx).add(ldy.mul(ldy)).mul(w))
     }
   }
 

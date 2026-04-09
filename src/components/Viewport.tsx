@@ -1,13 +1,16 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, useCallback } from 'react'
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber'
-import { Line, OrbitControls } from '@react-three/drei'
+import { Line, OrbitControls, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { MOUSE } from 'three'
-import { useStore } from '@/store'
-import type { DrawBatch } from '@/lang/interpreter'
+import { Lock } from 'lucide-react'
+import { useStore, type VertexLock } from '@/store'
+import type { DrawBatch, AnnotatedEdge2 } from '@/lang/interpreter'
 import { polygonsToGeometry, quads3ToGeometry, buildPlanarFaceMeshes } from '@/geometry/three'
-import { findClosestEdge, buildDragSession, optimizeDrag, type DragSession } from '@/optimize/drag'
+import { findClosestEdge, buildDragSession, optimizeDrag, collectVertices, type DragSession } from '@/optimize/drag'
 import { useSceneDragDrop2D } from '@/components/DragDrop'
+import type { Point2 } from '@/lang/values'
+import { DualValue } from '@/lang/grad'
 
 const DEFAULT_STROKE_COLOR = '#e4e4e7'
 const DEFAULT_POINT_COLOR = '#a1a1aa'
@@ -156,12 +159,138 @@ function BatchPoints({ batch }: { batch: DrawBatch }) {
   )
 }
 
-function OptimizedDot({ position }: { position: { x: number; y: number } }) {
+function OptimizedDot({ position }: { position: Point2 }) {
   return (
     <mesh position={[position.x, position.y, 0.1]}>
-      <circleGeometry args={[0.5, 16]} />
+      <circleGeometry args={[0.25, 16]} />
       <meshBasicMaterial color="#facc15" depthWrite={false} />
     </mesh>
+  )
+}
+
+/** Invisible circular hit target at a vertex, with yellow hover. Alt+click toggles lock. */
+function VertexHitbox({
+  x, y, xIdx, yIdx, pt,
+}: {
+  x: number; y: number; xIdx: number; yIdx: number; pt: any
+}) {
+  const [hovered, setHovered] = useState(false)
+
+  const handleClick = useCallback((e: ThreeEvent<PointerEvent>) => {
+    if (!e.nativeEvent.altKey) return
+    e.stopPropagation()
+
+    const lineage = useStore.getState().lineage
+    if (!lineage) return
+
+    const rootIndices = lineage.findRootIndices(pt)
+    if (rootIndices.size === 0) return
+
+    const store = useStore.getState()
+    // Toggle: if a lock with the same root indices exists, remove it
+    const existing = store.locks.find((l) => {
+      if (l.rootIndices.size !== rootIndices.size) return false
+      for (const idx of rootIndices) {
+        if (!l.rootIndices.has(idx)) return false
+      }
+      return true
+    })
+
+    if (existing) {
+      store.removeLock(rootIndices)
+    } else {
+      store.addLock({ rootIndices, tapeXIdx: xIdx, tapeYIdx: yIdx, active: true })
+    }
+  }, [pt, xIdx, yIdx])
+
+  return (
+    <group>
+      {/* Visible indicator on hover */}
+      {hovered && (
+        <mesh position={[x, y, 0.05]}>
+          <ringGeometry args={[0.15, 0.25, 16]} />
+          <meshBasicMaterial color={HOVER_COLOR} depthWrite={false} transparent opacity={0.8} />
+        </mesh>
+      )}
+      {/* Invisible hit circle */}
+      <mesh
+        position={[x, y, 0.05]}
+        visible={false}
+        onPointerEnter={() => setHovered(true)}
+        onPointerLeave={() => setHovered(false)}
+        onPointerDown={handleClick}
+      >
+        <circleGeometry args={[0.8, 16]} />
+        <meshBasicMaterial />
+      </mesh>
+    </group>
+  )
+}
+
+/** Render lock icons at locked vertex positions. */
+function LockIcons() {
+  const locks = useStore((s) => s.locks)
+  const tape = useStore((s) => s.tape)
+
+  // Resolve lock display positions from tape primals
+  const lockPositions = useMemo(() => {
+    if (!tape) return []
+    return locks
+      .filter((l) => l.tapeXIdx < tape.nodes.length && l.tapeYIdx < tape.nodes.length)
+      .map((l) => ({
+        x: tape.nodes[l.tapeXIdx].primal,
+        y: tape.nodes[l.tapeYIdx].primal,
+        active: l.active,
+      }))
+  }, [locks, tape])
+
+  if (lockPositions.length === 0) return null
+
+  const ACTIVE_COLOR = '#f97316'
+  const INERT_COLOR = '#52525b'
+
+  return (
+    <>
+      {lockPositions.map((pos, i) => {
+        const color = pos.active ? ACTIVE_COLOR : INERT_COLOR
+        return (
+          <group key={i}>
+            <mesh position={[pos.x, pos.y, 0.05]}>
+              <circleGeometry args={[0.3, 16]} />
+              <meshBasicMaterial color={color} depthWrite={false} />
+            </mesh>
+            <Html position={[pos.x + 0.6, pos.y + 0.6, 0]} style={{ pointerEvents: 'none' }}>
+              <Lock size={12} color={color} strokeWidth={2.5} style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.8))' }} />
+            </Html>
+          </group>
+        )
+      })}
+    </>
+  )
+}
+
+/** Render invisible vertex hitboxes for alt+click locking. */
+function VertexHitboxes() {
+  const scene = useStore((s) => s.scene)
+
+  const vertices = useMemo(() => {
+    const allEdges = scene.flatMap((b) => b.edges)
+    return collectVertices(allEdges)
+  }, [scene])
+
+  return (
+    <>
+      {vertices.map((v, i) => (
+        <VertexHitbox
+          key={i}
+          x={v.x}
+          y={v.y}
+          xIdx={(v.pt.x as DualValue).index}
+          yIdx={(v.pt.y as DualValue).index}
+          pt={v.pt}
+        />
+      ))}
+    </>
   )
 }
 
@@ -177,7 +306,7 @@ function CameraSetup2D() {
 function DraggableBatches({
   setOptPoint,
 }: {
-  setOptPoint: (p: { x: number; y: number } | null) => void
+  setOptPoint: (p: Point2 | null) => void
 }) {
   const scene = useStore((s) => s.scene)
   const sessionRef = useRef<DragSession | null>(null)
@@ -252,6 +381,35 @@ function CameraModeButton() {
   )
 }
 
+function ClearLocksButton() {
+  const locks = useStore((s) => s.locks)
+  const clearLocks = useStore((s) => s.clearLocks)
+
+  if (locks.length === 0) return null
+
+  return (
+    <button
+      onClick={clearLocks}
+      style={{
+        position: 'absolute',
+        top: 8,
+        right: 52,
+        zIndex: 10,
+        padding: '4px 10px',
+        background: '#27272a',
+        color: '#f97316',
+        border: '1px solid #3f3f46',
+        borderRadius: 4,
+        cursor: 'pointer',
+        fontSize: 13,
+        fontFamily: 'monospace',
+      }}
+    >
+      Clear Locks ({locks.length})
+    </button>
+  )
+}
+
 function Batches() {
   const scene = useStore((s) => s.scene)
 
@@ -276,6 +434,7 @@ export function Viewport() {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }} onContextMenu={(e) => e.preventDefault()}>
       <CameraModeButton />
+      <ClearLocksButton />
       {cameraMode === '2d' ? (
         <Canvas
           key="ortho"
@@ -300,6 +459,8 @@ export function Viewport() {
             }}
           />
           <DraggableBatches setOptPoint={setOptPoint} />
+          <VertexHitboxes />
+          <LockIcons />
           {optPoint && <OptimizedDot position={optPoint} />}
         </Canvas>
       ) : (

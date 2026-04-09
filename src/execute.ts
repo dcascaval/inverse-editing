@@ -3,6 +3,7 @@ import type { Slider } from '@/store'
 import type { Program } from '@/lang/ast'
 import { parse } from '@/lang/parser'
 import { type ExecutionMode, executeProgram } from '@/lang/interpreter'
+import { resolveLocks } from '@/optimize/drag'
 
 /** Nearest power of 10 strictly greater than |value|, minimum 10 */
 function upperBound(value: number): number {
@@ -44,9 +45,16 @@ function exec(code: string, sync: boolean, mode: ExecutionMode = 'dual') {
       paramValues.set(s.name, s.value)
     }
 
-    const { drawBuffer, error, tape } = executeProgram(program, paramValues, mode)
+    const { drawBuffer, lineage, error, tape } = executeProgram(program, paramValues, mode)
     store.setScene(drawBuffer.batches)
     store.setTape(tape)
+    store.setLineage(lineage)
+
+    // Re-resolve locks against the new lineage graph and tape
+    if (lineage && tape) {
+      const allEdges = drawBuffer.batches.flatMap((b) => b.edges)
+      resolveLocks(allEdges, lineage, tape)
+    }
 
     if (error) {
       store.setError(error.message)
