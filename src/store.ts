@@ -79,6 +79,41 @@ export type VertexLock = {
 
 const DEFAULT_CODE = 'parameters {\n}\n'
 
+const exampleFiles = import.meta.glob('../examples/*.txt', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+}) as Record<string, string>
+
+/** Merge example programs into the store, skipping names that already exist. */
+export function loadExamples() {
+  const { programs } = useStore.getState()
+  const existingNames = new Set(programs.map((p) => p.name))
+  const toAdd: Program[] = []
+
+  for (const [path, code] of Object.entries(exampleFiles)) {
+    const file = path.split('/').pop()!.replace(/\.txt$/, '')
+    const name = `examples/${file}`
+    if (!existingNames.has(name)) {
+      toAdd.push({ name, code })
+    }
+  }
+
+  const hadUserPrograms = programs.some((p) => p.name && p.name !== 'untitled')
+  const allPrograms = toAdd.length > 0 ? [...programs, ...toAdd] : programs
+
+  if (toAdd.length > 0) {
+    useStore.setState({ programs: allPrograms })
+  }
+
+  if (!hadUserPrograms) {
+    const idx = allPrograms.findIndex((p) => p.name === 'examples/rectangle')
+    if (idx >= 0) {
+      useStore.setState({ activeIndex: idx, code: allPrograms[idx].code })
+    }
+  }
+}
+
 export const useStore = create<Store>()(
   persist(
     (set, get) => ({

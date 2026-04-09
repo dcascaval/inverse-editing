@@ -30,7 +30,6 @@ bez = (t) => {
 
 curve = Tabulate(11, i => polygon(bez(i/10),4, r))
 
-
 u = unionAll(curve)
 
 draw(line(a,b), line(c,d))
