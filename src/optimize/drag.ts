@@ -52,7 +52,10 @@ export function findClosestEdge(
 
 
 /* Base regularization weight */
-const LAMBDA = 2.5;
+const LAMBDA = 0.5;
+
+/** Use log-sum (concave, sparsity-inducing) vs standard L1 regularization */
+const USE_LOG_SUM_REG = false;
 
 /**
  * Compute per-parameter selectivity weights using forward-mode tangent passes.
@@ -184,16 +187,35 @@ export function buildDragSession(
   // Compute selectivity-based regularization weights via forward tangent passes
   const paramWeights = computeSelectivityWeights(tape, paramNames, ptX.index, ptY.index, allEdges)
 
-  // Weighted L1 regularization: sum(w_i * |p_i - p0_i|)
-  for (let i = 0; i < paramNames.length; i++) {
-    const w = paramWeights[i]
-    if (w <= 0) continue
-    const name = paramNames[i]
-    const paramIdx = tape.paramIndices.get(name)!
-    const paramVal = new DualValue(tape, paramIdx)
-    const p0 = dual(tape, initialParams.get(name) ?? 0)
-    const diff = paramVal.sub(p0).abs()
-    loss = loss.add(diff.mul(dual(tape, w)))
+  // Regularization: penalize parameter changes from initial values
+  if (USE_LOG_SUM_REG) {
+    // Log-sum: sum(w_i * log(1 + |δ_i| / σ))
+    // Concave — steep near 0, saturates for large δ, induces sparsity
+    const sigma = dual(tape, 0.1)
+    const one = dual(tape, 1)
+    for (let i = 0; i < paramNames.length; i++) {
+      const w = paramWeights[i]
+      if (w <= 0) continue
+      const name = paramNames[i]
+      const paramIdx = tape.paramIndices.get(name)!
+      const paramVal = new DualValue(tape, paramIdx)
+      const p0 = dual(tape, initialParams.get(name) ?? 0)
+      const diff = paramVal.sub(p0).abs()
+      const logPenalty = one.add(diff.div(sigma)).log()
+      loss = loss.add(logPenalty.mul(dual(tape, w)))
+    }
+  } else {
+    // L1: sum(w_i * |δ_i|)
+    for (let i = 0; i < paramNames.length; i++) {
+      const w = paramWeights[i]
+      if (w <= 0) continue
+      const name = paramNames[i]
+      const paramIdx = tape.paramIndices.get(name)!
+      const paramVal = new DualValue(tape, paramIdx)
+      const p0 = dual(tape, initialParams.get(name) ?? 0)
+      const diff = paramVal.sub(p0).abs()
+      loss = loss.add(diff.mul(dual(tape, w)))
+    }
   }
 
   // Register computed nodes as pseudo-params so their sub-tape indices are tracked.

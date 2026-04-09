@@ -18,6 +18,7 @@ export interface NumericValue<Self extends NumericValue<Self> = any> {
   abs(): Self
   sin(): Self
   cos(): Self
+  log(): Self
   min(other: Self): Self
   max(other: Self): Self
   toNumber(): number
@@ -40,6 +41,7 @@ export class RealValue implements NumericValue<RealValue> {
   abs(): RealValue { return new RealValue(Math.abs(this.value)) }
   sin(): RealValue { return new RealValue(Math.sin(this.value)) }
   cos(): RealValue { return new RealValue(Math.cos(this.value)) }
+  log(): RealValue { return new RealValue(Math.log(this.value)) }
   min(other: RealValue): RealValue { return new RealValue(Math.min(this.value, other.value)) }
   max(other: RealValue): RealValue { return new RealValue(Math.max(this.value, other.value)) }
   toNumber(): number { return this.value }
