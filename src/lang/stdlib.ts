@@ -306,6 +306,20 @@ export function getProperty(obj: Value, prop: string, g: LineageGraph, tape?: Ta
         g.indirect([obj.start, obj.end], result)
         return result
       }
+      if (prop === 'at') {
+        return {
+          type: 'builtin',
+          name: 'edge2.at',
+          fn: (args) => {
+            const t = asNumeric(args[0], 'at parameter')
+            const x = obj.start.x.add(t.mul(obj.end.x.sub(obj.start.x)))
+            const y = obj.start.y.add(t.mul(obj.end.y.sub(obj.start.y)))
+            const result = createPoint(x, y)
+            g.indirect([obj.start, obj.end], result)
+            return result
+          },
+        }
+      }
       break
     case 'rectangle':
       switch (prop) {
@@ -318,7 +332,7 @@ export function getProperty(obj: Value, prop: string, g: LineageGraph, tape?: Ta
         case 'bottomLeft': return obj.bottomLeft
         case 'bottomRight': return obj.bottomRight
         case 'top': return obj.top
-        case 'bottom': return obj.bottom
+        case 'bottom': case 'front': return obj.bottom
         case 'left': return obj.left
         case 'right': return obj.right
         case 'points': return { type: 'array', elements: obj.points }
@@ -501,6 +515,89 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph, tape?: Tape | nul
     signature([Num, Num, Num, Num], (x1, y1, x2, y2) =>
       createEdge(createPoint(x1.value, y1.value), createPoint(x2.value, y2.value), g)),
   ]))
+
+  alias('edge', 'line', 'Line')
+
+  // ExtrudeCurve: extrude an edge into a rectangle
+
+  register('ExtrudeCurve', (args) => {
+    if (args.length < 2 || args.length > 3)
+      throw new Error('ExtrudeCurve: expected (edge, length) or (edge, length, direction)')
+    if (args[0].type !== 'edge2')
+      throw new Error('ExtrudeCurve: first argument must be an edge')
+    const edge = args[0]
+    const length = asNumeric(args[1], 'ExtrudeCurve length')
+
+    const dx = edge.end.x.sub(edge.start.x)
+    const dy = edge.end.y.sub(edge.start.y)
+
+    let dirX: NumericValue, dirY: NumericValue
+    if (args.length >= 3) {
+      if (args[2].type !== 'point2')
+        throw new Error('ExtrudeCurve: direction must be a point')
+      dirX = args[2].x
+      dirY = args[2].y
+    } else {
+      // Default normal: rotate (dx, dy) by -90° → (dy, -dx)
+      dirX = dy
+      dirY = dx.neg()
+    }
+
+    // Normalize direction and scale by length
+    const dirLen = dirX.mul(dirX).add(dirY.mul(dirY)).sqrt()
+    const extX = dirX.mul(length).div(dirLen)
+    const extY = dirY.mul(length).div(dirLen)
+
+    // Offset points by extrusion vector
+    const p0 = edge.start
+    const p1 = edge.end
+    const p2 = createPoint(p1.x.add(extX), p1.y.add(extY))
+    const p3 = createPoint(p0.x.add(extX), p0.y.add(extY))
+
+    // Ensure CCW winding: check cross product of edge dir and extrusion dir
+    // cross = dx * extY - dy * extX; if negative, swap to get CCW
+    const cross = dx.mul(extY).sub(dy.mul(extX)).toNumber()
+    const [bl, br, tr, tl] = cross >= 0
+      ? [p0, p1, p2, p3]   // edge×ext is CCW: bottom=p0→p1
+      : [p1, p0, p3, p2]   // flip: bottom=p1→p0
+
+    // Mark all points as root primitives
+    g.markRoot(bl)
+    g.markRoot(br)
+    g.markRoot(tl)
+    g.markRoot(tr)
+
+    // Build edges (CCW winding)
+    // Reuse the original edge as bottom when winding matches, otherwise create new
+    const bottom = cross >= 0 ? edge : createEdge(bl, br, g)
+    const right = createEdge(br, tr, g)
+    const top = createEdge(tr, tl, g)
+    const left = createEdge(tl, bl, g)
+
+    // If we flipped, create lineage from original edge to the new bottom
+    if (cross < 0) {
+      g.direct(edge, bottom)
+    }
+
+    g.markRoot(bottom)
+    g.markRoot(right)
+    g.markRoot(top)
+    g.markRoot(left)
+
+    // Width = edge length, height = extrusion length (no min/max branching)
+    const edgeLen = dx.mul(dx).add(dy.mul(dy)).sqrt()
+
+    return {
+      type: 'rectangle',
+      x: bl.x, y: bl.y,
+      width: edgeLen,
+      height: length,
+      bottomLeft: bl, bottomRight: br, topLeft: tl, topRight: tr,
+      bottom, right, top, left,
+      points: [bl, br, tr, tl],
+      edges: [bottom, right, top, left],
+    } satisfies RectangleVal
+  }, 'extrudeCurve')
 
   // Debug
 

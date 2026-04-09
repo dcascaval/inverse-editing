@@ -526,3 +526,175 @@ draw(tabulate(3, i => hex.translate(i * 25, 0)))`)
     expect(count).toBe(18)
   })
 })
+
+
+// Line & edge.at
+
+
+describe('Line', () => {
+  it('creates an edge from two points', () => {
+    const { edges } = drawn(`parameters {}
+l = Line(pt(0, 0), pt(10, 0))
+draw(l)`)
+    expect(edges).toHaveLength(1)
+    expect(edges[0].start).toEqual({ x: 0, y: 0 })
+    expect(edges[0].end).toEqual({ x: 10, y: 0 })
+  })
+
+  it('is an alias for edge', () => {
+    const { edges } = drawn(`parameters {}
+draw(line(pt(1, 2), pt(3, 4)))`)
+    expect(edges).toHaveLength(1)
+    expect(edges[0].start).toEqual({ x: 1, y: 2 })
+    expect(edges[0].end).toEqual({ x: 3, y: 4 })
+  })
+})
+
+
+describe('edge.at', () => {
+  it('returns start at t=0', () => {
+    const { points } = drawn(`parameters {}
+e = edge(pt(0, 0), pt(10, 20))
+draw(e.at(0))`)
+    expect(points).toHaveLength(1)
+    expect(points[0]).toEqual({ x: 0, y: 0 })
+  })
+
+  it('returns end at t=1', () => {
+    const { points } = drawn(`parameters {}
+e = edge(pt(0, 0), pt(10, 20))
+draw(e.at(1))`)
+    expect(points).toHaveLength(1)
+    expect(points[0]).toEqual({ x: 10, y: 20 })
+  })
+
+  it('returns midpoint at t=0.5', () => {
+    const { points } = drawn(`parameters {}
+e = edge(pt(0, 0), pt(10, 20))
+draw(e.at(0.5))`)
+    expect(points).toHaveLength(1)
+    expect(points[0]).toEqual({ x: 5, y: 10 })
+  })
+
+  it('interpolates at arbitrary t', () => {
+    const { points } = drawn(`parameters {}
+e = edge(pt(0, 0), pt(100, 0))
+draw(e.at(0.25))`)
+    expect(points).toHaveLength(1)
+    expect(points[0]).toEqual({ x: 25, y: 0 })
+  })
+})
+
+
+// ExtrudeCurve
+
+
+describe('ExtrudeCurve', () => {
+  it('extrudes an edge using default normal', () => {
+    const { edges } = drawn(`parameters {}
+e = Line(pt(0, 0), pt(10, 0))
+r = ExtrudeCurve(e, 5)
+draw(r)`)
+    // 4 edges for the rectangle
+    expect(edges).toHaveLength(4)
+  })
+
+  it('bottom connects the edge endpoints', () => {
+    const { edges } = drawn(`parameters {}
+e = Line(pt(0, 0), pt(10, 0))
+r = ExtrudeCurve(e, 5)
+draw(r.bottom)`)
+    expect(edges).toHaveLength(1)
+    // Winding may flip to ensure CCW; check both endpoints present
+    const xs = [edges[0].start.x, edges[0].end.x].sort()
+    expect(xs).toEqual([0, 10])
+    expect(edges[0].start.y).toBe(0)
+    expect(edges[0].end.y).toBe(0)
+  })
+
+  it('front is an alias for bottom', () => {
+    const { edges } = drawn(`parameters {}
+e = Line(pt(0, 0), pt(10, 0))
+r = ExtrudeCurve(e, 5)
+draw(r.front)`)
+    expect(edges).toHaveLength(1)
+    const xs = [edges[0].start.x, edges[0].end.x].sort()
+    expect(xs).toEqual([0, 10])
+  })
+
+  it('top is offset by the normal', () => {
+    const { edges } = drawn(`parameters {}
+e = Line(pt(0, 0), pt(10, 0))
+r = ExtrudeCurve(e, 5)
+draw(r.top)`)
+    expect(edges).toHaveLength(1)
+    // Normal for right-going edge is (0, -1), so top is at y=-5
+    expect(edges[0].start.y).toBeCloseTo(-5)
+    expect(edges[0].end.y).toBeCloseTo(-5)
+    const xs = [edges[0].start.x, edges[0].end.x].sort()
+    expect(xs[0]).toBeCloseTo(0)
+    expect(xs[1]).toBeCloseTo(10)
+  })
+
+  it('extrudes with custom direction', () => {
+    const { edges } = drawn(`parameters {}
+e = Line(pt(0, 0), pt(10, 0))
+r = ExtrudeCurve(e, 10, pt(0, 1))
+draw(r.top)`)
+    expect(edges).toHaveLength(1)
+    // Direction (0,1) normalized * 10 = (0, 10)
+    expect(edges[0].start.x).toBeCloseTo(10)
+    expect(edges[0].start.y).toBeCloseTo(10)
+    expect(edges[0].end.x).toBeCloseTo(0)
+    expect(edges[0].end.y).toBeCloseTo(10)
+  })
+
+  it('has named corner points', () => {
+    const { points } = drawn(`parameters {}
+e = Line(pt(0, 0), pt(10, 0))
+r = ExtrudeCurve(e, 5, pt(0, 1))
+draw(r.topLeft)
+draw(r.topRight)`)
+    expect(points).toHaveLength(2)
+    expect(points[0]).toEqual({ x: 0, y: 5 })
+    expect(points[1]).toEqual({ x: 10, y: 5 })
+  })
+
+  it('points and edges are root primitives', () => {
+    const count = drawnEdgeCount(`parameters {}
+e = Line(pt(0, 0), pt(10, 0))
+r = ExtrudeCurve(e, 5)
+r2 = r.translate(20, 0)
+draw(query(r2.edges, from(r.top)))`)
+    expect(count).toBe(1)
+  })
+
+  it('works with .at() for edge input', () => {
+    const { edges } = drawn(`parameters {}
+r0 = rect(pt(0, 0), 10, 20)
+l1 = Line(r0.topRight, pt(r0.topRight.x, r0.right.at(0.5).y))
+draw(l1)`)
+    expect(edges).toHaveLength(1)
+    expect(edges[0].start).toEqual({ x: 10, y: 20 })
+    expect(edges[0].end.x).toBeCloseTo(10)
+    expect(edges[0].end.y).toBeCloseTo(10)
+  })
+
+  it('runs the full example program without error', () => {
+    runOk(`parameters {
+  h1: 100
+  h2: 70
+  ex1: 200
+  c: 40
+  dt: 0.5
+  rd: 20
+}
+root = pt(400,400)
+r0 = rect(root, -100, 100)
+center = pt(r0.top.midpoint.x, r0.right.midpoint.y)
+l1 = Line(r0.topRight, pt(r0.topRight.x, r0.right.at(dt).y))
+r1 = ExtrudeCurve(l1, ex1, pt(-2, 1))
+r2 = ExtrudeCurve(r1.top, h2)
+rflLine = r1.front.translate(rd, rd)`)
+  })
+})
