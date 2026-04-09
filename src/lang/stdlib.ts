@@ -21,15 +21,12 @@ import {
   asNumeric,
   asString,
   showValue,
-  nv,
-  Edge2Val,
-  RectangleVal,
+  nv, RectangleVal
 } from '@/lang/values'
 import type { NumericValue } from '@/lang/numeric'
-import { real } from '@/lang/numeric'
 import type { Tape } from '@/lang/grad'
 import type { AnnotatedPoint2, AnnotatedEdge2 } from '@/lang/interpreter'
-import { overloaded, signature, Num, Pt2, Rct, Pgn, Rgn, Ext, Arr } from '@/lang/overload'
+import { overloaded, signature, Num, Pt2, Rct, Pgn, Rgn } from '@/lang/overload'
 import {
   transformValue,
   translationMatrix,
@@ -48,10 +45,10 @@ import {
 } from '@/geometry/transform'
 import type { LineageGraph } from '@/lang/lineage'
 import * as Query from '@/lang/query'
-import type { DrawBatch, DrawBuffer, Point3, Quad3, PlanarFaceDraw } from '@/lang/interpreter'
+import type { DrawBatch, DrawBuffer, Point3, Quad3 } from '@/lang/interpreter'
 import { Matrix4, Vector3 } from 'three'
 import { type BooleanOp, booleanOperation, unionRegions, subtractRegions, intersectRegions } from '@/geometry/boolean'
-import { distributeHoles, pointInPolygon } from '@/geometry/polygon'
+import { distributeHoles } from '@/geometry/polygon'
 import { chamferPolygon } from '@/geometry/chamfer'
 
 

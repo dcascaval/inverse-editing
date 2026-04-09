@@ -112,8 +112,8 @@ function BatchEdges({
           segments
           lineWidth={HIT_LINE_WIDTH}
           visible={false}
-          onPointerEnter={() => setHovered(true)}
-          onPointerLeave={() => setHovered(false)}
+          onPointerEnter={() => { setHovered(true); document.body.style.cursor = 'grab' }}
+          onPointerLeave={() => { setHovered(false); document.body.style.cursor = '' }}
           onPointerDown={onEdgeDrag}
         />
       )}
@@ -326,7 +326,7 @@ function DraggableBatches({
       const tape = useStore.getState().tape
       if (!tape) return
 
-      const allEdges = useStore.getState().scene.flatMap((b) => b.edges)
+      const allEdges = useStore.getState().scene.filter((b) => !b.style.dashed).flatMap((b) => b.edges)
       const pt = e.point
       const hit = findClosestEdge(allEdges, pt.x, pt.y)
       if (!hit) return
@@ -362,7 +362,7 @@ function DraggableBatches({
         <group key={i} renderOrder={i}>
           <BatchPolygons batch={batch} />
           <BatchFaces3 batch={batch} />
-          <BatchEdges batch={batch} onEdgeDrag={onDrag} />
+          <BatchEdges batch={batch} onEdgeDrag={batch.style.dashed ? undefined : onDrag} />
           <BatchPoints batch={batch} />
         </group>
       ))}

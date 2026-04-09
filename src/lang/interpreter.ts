@@ -3,15 +3,12 @@ import { Matrix4 } from 'three'
 import {
   type Value,
   type Point2Val,
-  type Point2,
-  type Edge2,
-  createNumber,
+  type Point2, createNumber,
   createNull,
   asNumeric,
-  showValue,
+  showValue
 } from '@/lang/values'
 import type { NumericValue } from '@/lang/numeric'
-import { real } from '@/lang/numeric'
 import { Tape } from '@/lang/grad'
 import { LineageGraph } from '@/lang/lineage'
 import * as Query from '@/lang/query'
