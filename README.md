@@ -1,3 +1,5 @@
+LIVE DEMO HERE: https://dcascaval.github.io/inverse-editing/
+
 # Inverse editing
 
 A parametric 2.5 CAD system with direct manipulation: write programs that generate geometry, then drag edges to edit the geometry directly, optimizing parameters even across topological changes. Enables querying elements via reachability in topological provenance graph from known elements (lineage), and automatically synthesizing lineage references for elements to impose constraints preserved where possible.
@@ -85,3 +87,11 @@ You can Alt+click vertices to lock them. Locks are identified by lineage root in
 - `execute.ts` -- Orchestrates parse, execute, render pipeline
 - `Viewport.tsx` -- 3D canvas with edge/face drag interaction
 - `DragDrop.tsx` -- Screen-to-world coordinate conversion, drag lifecycle
+
+## Development 
+
+Standard client side web app, uses bun/vite.
+- `git clone`
+- `bun install`
+- `bun dev` to get a local dev server
+- Open up locahost:5173 in browser to try it out
