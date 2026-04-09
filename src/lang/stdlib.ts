@@ -48,7 +48,7 @@ import type { LineageGraph } from '@/lang/lineage'
 import * as Query from '@/lang/query'
 import type { DrawBatch, DrawBuffer, Point3, Quad3, PlanarFaceDraw } from '@/lang/interpreter'
 import { Matrix4, Vector3 } from 'three'
-import { type BooleanOp, booleanOperation } from '@/geometry/boolean'
+import { type BooleanOp, booleanOperation, unionRegions, subtractRegions, intersectRegions } from '@/geometry/boolean'
 import { distributeHoles, pointInPolygon } from '@/geometry/polygon'
 
 
@@ -581,13 +581,36 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph, tape?: Tape | nul
 
   // Boolean operations
 
-  const boolOp = (op: BooleanOp) =>
-    overloaded(op, [
+  /** Wrap a polygon or rectangle as a single-positive region. */
+  function toRegion(v: PolygonVal | RegionVal | { type: 'rectangle'; points: Point2Val[]; edges: import('@/lang/values').Edge2Val[] }): RegionVal {
+    if (v.type === 'region') return v
+    const poly: PolygonVal = v.type === 'polygon' ? v : { type: 'polygon', points: v.points, edges: v.edges }
+    return { type: 'region', positive: [poly], negative: [] }
+  }
+
+  const regionBoolOp = (op: BooleanOp) => {
+    const regionOp = op === 'union' ? unionRegions
+      : op === 'difference' ? subtractRegions
+      : intersectRegions
+    return (a: RegionVal, b: RegionVal) => regionOp(a, b, g, tape)
+  }
+
+  const boolOp = (op: BooleanOp) => {
+    const rOp = regionBoolOp(op)
+    return overloaded(op, [
+      // Polygon/Rectangle pairs (existing)
       signature([Rct, Rct], (a, b) => booleanOperation(a, b, op, g, tape)),
       signature([Pgn, Pgn], (a, b) => booleanOperation(a, b, op, g, tape)),
       signature([Rct, Pgn], (a, b) => booleanOperation(a, b, op, g, tape)),
       signature([Pgn, Rct], (a, b) => booleanOperation(a, b, op, g, tape)),
+      // Region pairs
+      signature([Rgn, Rgn], (a, b) => rOp(a, b)),
+      signature([Rgn, Rct], (a, b) => rOp(a, toRegion(b))),
+      signature([Rct, Rgn], (a, b) => rOp(toRegion(a), b)),
+      signature([Rgn, Pgn], (a, b) => rOp(a, toRegion(b))),
+      signature([Pgn, Rgn], (a, b) => rOp(toRegion(a), b)),
     ])
+  }
 
   scope.set('union', boolOp('union'))
   scope.set('difference', boolOp('difference'))

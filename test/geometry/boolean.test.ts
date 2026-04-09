@@ -395,3 +395,124 @@ draw(pt(found.length, 0))`)
     expect(pts[0].x).toBeGreaterThan(0) // the positive polygon contains elements derived from a
   })
 })
+
+
+// Region-region boolean operations
+
+
+describe('region-region union', () => {
+  it('union of two regions (each from difference) merges them', () => {
+    const result = runOk(`parameters {}
+a = difference(rect(0,0,20,20), rect(5,5,10,10))
+b = difference(rect(15,0,20,20), rect(20,5,10,10))
+c = union(a, b)
+draw(c)`)
+    expect(result.error).toBeNull()
+    const edges = result.drawBuffer.batches.flatMap((b) => b.edges)
+    expect(edges.length).toBeGreaterThan(0)
+  })
+
+  it('union of region with polygon', () => {
+    const result = runOk(`parameters {}
+a = difference(rect(0,0,20,20), rect(5,5,10,10))
+b = rect(25,0,5,5)
+c = union(a, b)
+draw(c)`)
+    expect(result.error).toBeNull()
+    const edges = result.drawBuffer.batches.flatMap((b) => b.edges)
+    // Should have outer + hole + separate rect
+    expect(edges.length).toBeGreaterThanOrEqual(12)
+  })
+
+  it('union of polygon with region', () => {
+    const result = runOk(`parameters {}
+a = rect(25,0,5,5)
+b = difference(rect(0,0,20,20), rect(5,5,10,10))
+c = union(a, b)
+draw(c)`)
+    expect(result.error).toBeNull()
+    const edges = result.drawBuffer.batches.flatMap((b) => b.edges)
+    expect(edges.length).toBeGreaterThanOrEqual(12)
+  })
+
+  it('union of rectangle with region', () => {
+    const result = runOk(`parameters {}
+a = rect(25,0,5,5)
+b = difference(rect(0,0,20,20), rect(5,5,10,10))
+c = union(a, b)
+draw(c)`)
+    expect(result.error).toBeNull()
+  })
+})
+
+
+describe('region-region difference', () => {
+  it('difference of two non-overlapping regions returns first', () => {
+    const result = runOk(`parameters {}
+a = difference(rect(0,0,20,20), rect(5,5,10,10))
+b = difference(rect(30,0,20,20), rect(35,5,10,10))
+c = difference(a, b)
+draw(c)`)
+    expect(result.error).toBeNull()
+    const edges = result.drawBuffer.batches.flatMap((b) => b.edges)
+    // Should be same as a (8 edges: outer + hole)
+    expect(edges.length).toBe(8)
+  })
+
+  it('difference of region minus rectangle', () => {
+    const result = runOk(`parameters {}
+a = difference(rect(0,0,20,20), rect(5,5,10,10))
+b = rect(0,0,10,10)
+c = difference(a, b)
+draw(c)`)
+    expect(result.error).toBeNull()
+    const edges = result.drawBuffer.batches.flatMap((b) => b.edges)
+    expect(edges.length).toBeGreaterThan(0)
+  })
+
+  it('difference of rectangle minus region', () => {
+    const result = runOk(`parameters {}
+a = rect(0,0,30,30)
+b = difference(rect(5,5,20,20), rect(10,10,10,10))
+c = difference(a, b)
+draw(c)`)
+    expect(result.error).toBeNull()
+  })
+})
+
+
+describe('region-region intersection', () => {
+  it('intersection of two non-overlapping regions is empty', () => {
+    const result = runOk(`parameters {}
+a = difference(rect(0,0,20,20), rect(5,5,10,10))
+b = difference(rect(30,0,20,20), rect(35,5,10,10))
+c = intersection(a, b)
+draw(c)`)
+    expect(result.error).toBeNull()
+    const edges = result.drawBuffer.batches.flatMap((b) => b.edges)
+    expect(edges.length).toBe(0)
+  })
+
+  it('intersection of overlapping regions', () => {
+    const result = runOk(`parameters {}
+a = difference(rect(0,0,20,20), rect(5,5,10,10))
+b = rect(10,0,20,20)
+c = intersection(a, b)
+draw(c)`)
+    expect(result.error).toBeNull()
+    const edges = result.drawBuffer.batches.flatMap((b) => b.edges)
+    expect(edges.length).toBeGreaterThan(0)
+  })
+
+  it('intersection of rectangle with region', () => {
+    const result = runOk(`parameters {}
+a = rect(0,0,30,30)
+b = difference(rect(5,5,20,20), rect(10,10,10,10))
+c = intersection(a, b)
+draw(c)`)
+    expect(result.error).toBeNull()
+    const edges = result.drawBuffer.batches.flatMap((b) => b.edges)
+    // Should equal b since b is fully inside a
+    expect(edges.length).toBe(8)
+  })
+})

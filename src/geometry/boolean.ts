@@ -641,3 +641,231 @@ function buildDifferenceHole(outer: Value, hole: Value, g: LineageGraph): Region
     negative: [holePoly],
   }
 }
+
+
+// ---- Region-level boolean operations ----
+// These compose polygon-level booleans to handle regions (positive + negative polygon sets).
+// Translated from the Scala implementation in elodin/opt/operations.scala.
+
+
+/** Wrap a polygon as a single-positive region. */
+function asRegion(poly: PolygonVal): RegionVal {
+  return { type: 'region', positive: [poly], negative: [] }
+}
+
+/**
+ * Reverse a polygon's winding order (CW→CCW or CCW→CW).
+ * Negative polygons from boolean ops have CW winding; they must be reversed
+ * to CCW before being used as inputs to booleanOperation.
+ */
+function reverseWinding(poly: PolygonVal, g: LineageGraph): PolygonVal {
+  const pts = [...poly.points].reverse()
+  return createPolygon(pts, g)
+}
+
+/**
+ * Merge a polygon into a region's positive/negative polygon lists.
+ * Invariant: polygons within each list don't intersect each other.
+ */
+function addPolygonToRegion(
+  positives: PolygonVal[],
+  negatives: PolygonVal[],
+  newPolygon: PolygonVal,
+  g: LineageGraph,
+  tape?: Tape | null,
+): { positives: PolygonVal[]; negatives: PolygonVal[] } {
+  const posResult: PolygonVal[] = []
+  const newNegatives: PolygonVal[] = []
+
+  let i = 0
+  let done = false
+
+  while (i < positives.length && !done) {
+    const pos = positives[i]
+    const union = booleanOperation(pos, newPolygon, 'union', g, tape)
+
+    if (union.positive.length === 2 && union.negative.length === 0) {
+      // They don't touch — keep the positive, try next
+      posResult.push(pos)
+      i++
+    } else if (union.positive.length === 1 && union.negative.length === 0) {
+      // They merged into a single polygon — recursively add to remaining
+      done = true
+      const remaining = positives.slice(i + 1)
+      const rest = addPolygonToRegion(remaining, [], union.positive[0], g, tape)
+      posResult.push(...rest.positives)
+      newNegatives.push(...rest.negatives)
+    } else {
+      // They created a region with holes
+      done = true
+      const unionPos = union.positive[0]
+      const unionNegs = union.negative
+      const remaining = positives.slice(i + 1)
+      const rest = addPolygonToRegion(remaining, [], unionPos, g, tape)
+      posResult.push(...rest.positives)
+
+      // Trim negative polygons by subtracting remaining positives from them
+      const remainingRegion: RegionVal = { type: 'region', positive: remaining, negative: [] }
+      for (const neg of unionNegs) {
+        const trimmed = subtractRegions(asRegion(neg), remainingRegion, g, tape)
+        newNegatives.push(...trimmed.positive)
+      }
+      newNegatives.push(...rest.negatives)
+    }
+  }
+
+  if (!done) {
+    // Didn't intersect any existing positive — add it
+    posResult.push(newPolygon)
+  }
+
+  // Subtract the new polygon from existing negatives
+  // (negatives are already CCW — callers must ensure this)
+  const negResult: PolygonVal[] = []
+  for (const neg of negatives) {
+    const diff = booleanOperation(neg, newPolygon, 'difference', g, tape)
+    negResult.push(...diff.positive)
+  }
+
+  return {
+    positives: posResult,
+    negatives: [...negResult, ...newNegatives],
+  }
+}
+
+/**
+ * Union two regions.
+ * Folds b's positive polygons into a's region, then handles b's negative polygons.
+ */
+export function unionRegions(
+  a: RegionVal, b: RegionVal, g: LineageGraph, tape?: Tape | null,
+): RegionVal {
+  // Fold in each of b's positive polygons
+  // Reverse a's CW negatives to CCW so addPolygonToRegion can use them in boolean ops
+  let pos = a.positive
+  let neg = a.negative.map((n) => reverseWinding(n, g))
+  for (const bPoly of b.positive) {
+    const result = addPolygonToRegion(pos, neg, bPoly, g, tape)
+    pos = result.positives
+    neg = result.negatives
+  }
+
+  // Handle b's negatives (reverse CW→CCW for boolean ops):
+  // 1. Subtract a's positives from b's negatives (what remains is in b but not a)
+  const aPosRegion: RegionVal = { type: 'region', positive: a.positive, negative: [] }
+  const negSubPos: PolygonVal[] = []
+  for (const bNeg of b.negative) {
+    const bNegCCW = reverseWinding(bNeg, g)
+    const result = subtractRegions(asRegion(bNegCCW), aPosRegion, g, tape)
+    negSubPos.push(...result.positive)
+  }
+
+  // 2. Intersect a's negatives with b's negatives (holes in both remain holes)
+  const negAndNeg: PolygonVal[] = []
+  for (const aNeg of a.negative) {
+    for (const bNeg of b.negative) {
+      const aNegCCW = reverseWinding(aNeg, g)
+      const bNegCCW = reverseWinding(bNeg, g)
+      const ix = booleanOperation(aNegCCW, bNegCCW, 'intersection', g, tape)
+      negAndNeg.push(...ix.positive)
+    }
+  }
+
+  return {
+    type: 'region',
+    positive: pos,
+    negative: [...neg, ...negSubPos, ...negAndNeg],
+  }
+}
+
+/**
+ * Subtract region b from region a.
+ */
+export function subtractRegions(
+  a: RegionVal, b: RegionVal, g: LineageGraph, tape?: Tape | null,
+): RegionVal {
+  if (a.positive.length === 0) return { type: 'region', positive: [], negative: [] }
+
+  // Double negatives: b's holes, within a's positive area (minus a's holes),
+  // become additions to the result
+  const doubleNegatives: PolygonVal[] = []
+  if (b.negative.length > 0) {
+    // Reverse CW negatives to CCW for boolean ops
+    const aNegsCCW = a.negative.map((n) => reverseWinding(n, g))
+    const aNegRegion: RegionVal = { type: 'region', positive: aNegsCCW, negative: [] }
+    // Remove a's holes from b's holes
+    const bNegsStillAround: PolygonVal[] = []
+    for (const bNeg of b.negative) {
+      const bNegCCW = reverseWinding(bNeg, g)
+      const result = subtractRegions(asRegion(bNegCCW), aNegRegion, g, tape)
+      bNegsStillAround.push(...result.positive)
+    }
+    // Intersect with a's positives
+    for (const bNeg of bNegsStillAround) {
+      for (const aPos of a.positive) {
+        const ix = booleanOperation(bNeg, aPos, 'intersection', g, tape)
+        doubleNegatives.push(...ix.positive)
+      }
+    }
+  }
+
+  // Reverse a's CW negatives to CCW so addPolygonToRegion works correctly
+  let unionedNegatives = a.negative.map((n) => reverseWinding(n, g))
+  for (const bPos of b.positive) {
+    const result = addPolygonToRegion(unionedNegatives, [], bPos, g, tape)
+    unionedNegatives = result.positives
+  }
+
+  // Subtract each negative from a's positives
+  let pos = a.positive
+  const neg: PolygonVal[] = []
+  for (const hole of unionedNegatives) {
+    let escaped = false
+    const nextPos: PolygonVal[] = []
+    for (const p of pos) {
+      const diff = booleanOperation(p, hole, 'difference', g, tape)
+      if (diff.negative.length === 0) {
+        escaped = true
+        nextPos.push(...diff.positive)
+      } else {
+        nextPos.push(p)
+      }
+    }
+    pos = nextPos
+    if (!escaped) neg.push(hole)
+  }
+
+  return {
+    type: 'region',
+    positive: [...pos, ...doubleNegatives],
+    negative: neg,
+  }
+}
+
+/**
+ * Intersect two regions.
+ * Result = pairwise intersection of positives, minus all negatives from both.
+ */
+export function intersectRegions(
+  a: RegionVal, b: RegionVal, g: LineageGraph, tape?: Tape | null,
+): RegionVal {
+  // Intersect each positive of a with each positive of b
+  const intersected: PolygonVal[] = []
+  for (const aPos of a.positive) {
+    for (const bPos of b.positive) {
+      const ix = booleanOperation(aPos, bPos, 'intersection', g, tape)
+      intersected.push(...ix.positive)
+    }
+  }
+
+  if (intersected.length === 0) return { type: 'region', positive: [], negative: [] }
+
+  // Subtract all negatives from both regions (reverse CW→CCW first)
+  let result: RegionVal = { type: 'region', positive: intersected, negative: [] }
+  for (const neg of [...a.negative, ...b.negative]) {
+    const negCCW = reverseWinding(neg, g)
+    result = subtractRegions(result, asRegion(negCCW), g, tape)
+  }
+
+  return result
+}
