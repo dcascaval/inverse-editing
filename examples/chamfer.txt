@@ -20,7 +20,7 @@ operation program(H1, H2) {
   r5 = Rectangle(r4.bottomLeft, w4, H1)
 
   u = Union(r1, Union(r2, Union(r3, Union(r4, r5))))
-  cp = query(u.points, from(r3.top))
+  cp = query(u.points, from(r3.top) /* and not(derivedFromAny(r1, r5)) */)
 }
 
 p = program(h1, h2)

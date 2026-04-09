@@ -3,6 +3,7 @@ import { Editor } from '@/components/Editor'
 import { SliderPanel } from '@/components/SliderPanel'
 import { ProgramBar } from '@/components/ProgramBar'
 import { ErrorToast } from '@/components/ErrorToast'
+import { HelpButton } from '@/components/HelpPanel'
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
         <div className="relative flex-1 min-h-0">
           <Editor />
           <ErrorToast />
+          <HelpButton />
         </div>
       </div>
     </div>
