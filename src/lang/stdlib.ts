@@ -22,12 +22,14 @@ import {
   asString,
   showValue,
   nv,
+  Edge2Val,
+  RectangleVal,
 } from '@/lang/values'
 import type { NumericValue } from '@/lang/numeric'
 import { real } from '@/lang/numeric'
 import type { Tape } from '@/lang/grad'
 import type { AnnotatedPoint2, AnnotatedEdge2 } from '@/lang/interpreter'
-import { overloaded, signature, Num, Pt2, Rct, Pgn, Rgn, Ext } from '@/lang/overload'
+import { overloaded, signature, Num, Pt2, Rct, Pgn, Rgn, Ext, Arr } from '@/lang/overload'
 import {
   transformValue,
   translationMatrix,
@@ -50,6 +52,7 @@ import type { DrawBatch, DrawBuffer, Point3, Quad3, PlanarFaceDraw } from '@/lan
 import { Matrix4, Vector3 } from 'three'
 import { type BooleanOp, booleanOperation, unionRegions, subtractRegions, intersectRegions } from '@/geometry/boolean'
 import { distributeHoles, pointInPolygon } from '@/geometry/polygon'
+import { chamferPolygon } from '@/geometry/chamfer'
 
 
 // Draw helpers
@@ -582,7 +585,7 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph, tape?: Tape | nul
   // Boolean operations
 
   /** Wrap a polygon or rectangle as a single-positive region. */
-  function toRegion(v: PolygonVal | RegionVal | { type: 'rectangle'; points: Point2Val[]; edges: import('@/lang/values').Edge2Val[] }): RegionVal {
+  function toRegion(v: PolygonVal | RegionVal | RectangleVal): RegionVal {
     if (v.type === 'region') return v
     const poly: PolygonVal = v.type === 'polygon' ? v : { type: 'polygon', points: v.points, edges: v.edges }
     return { type: 'region', positive: [poly], negative: [] }
@@ -615,6 +618,27 @@ export function makeBuiltins(buf: DrawBuffer, g: LineageGraph, tape?: Tape | nul
   scope.set('union', boolOp('union'))
   scope.set('difference', boolOp('difference'))
   scope.set('intersection', boolOp('intersection'))
+
+  // Chamfer
+
+  register('chamfer', (args) => {
+    if (args.length !== 3) throw new Error('chamfer: expected (polygon, points, radius)')
+    const shape = args[0]
+    const pts = args[1]
+    const radiusArg = args[2]
+    if (pts.type !== 'array') throw new Error('chamfer: second argument must be an array of points')
+    if (radiusArg.type !== 'number') throw new Error('chamfer: third argument must be a number')
+    const vertices = new Set<Point2Val>()
+    for (const el of pts.elements) {
+      if (el.type !== 'point2') throw new Error('chamfer: array must contain points')
+      vertices.add(el)
+    }
+    let poly: PolygonVal
+    if (shape.type === 'polygon') poly = shape
+    else if (shape.type === 'rectangle') poly = { type: 'polygon', points: shape.points, edges: shape.edges }
+    else throw new Error('chamfer: first argument must be a polygon or rectangle')
+    return chamferPolygon(poly, vertices, radiusArg.value, g)
+  })
 
   // 3D: Extrude3D
 

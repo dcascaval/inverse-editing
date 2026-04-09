@@ -76,6 +76,11 @@ export class DualValue implements NumericValue<DualValue> {
       OpKind.Log, this.index, Math.log(this.primal)))
   }
 
+  sqrt(): DualValue {
+    return new DualValue(this.tape, this.tape.pushUnary(
+      OpKind.Sqrt, this.index, Math.sqrt(this.primal)))
+  }
+
   min(other: DualValue): DualValue {
     return new DualValue(this.tape, this.tape.pushBinary(
       OpKind.Min, this.index, other.index, Math.min(this.primal, other.primal)))
@@ -144,6 +149,7 @@ export enum OpKind {
   Sin,
   Cos,
   Log,
+  Sqrt,
   Min,
   Max,
 }
@@ -244,6 +250,7 @@ export class Tape {
         case OpKind.Sin: node.primal = Math.sin(a); break
         case OpKind.Cos: node.primal = Math.cos(a); break
         case OpKind.Log: node.primal = Math.log(a); break
+        case OpKind.Sqrt: node.primal = Math.sqrt(a); break
         case OpKind.Min: node.primal = Math.min(a, b); break
         case OpKind.Max: node.primal = Math.max(a, b); break
       }
@@ -314,6 +321,7 @@ export class Tape {
         case OpKind.Sin: tangents[i] = da * Math.cos(n[node.inputA].primal); break
         case OpKind.Cos: tangents[i] = da * -Math.sin(n[node.inputA].primal); break
         case OpKind.Log: tangents[i] = da / n[node.inputA].primal; break
+        case OpKind.Sqrt: tangents[i] = da / (2 * node.primal); break
         case OpKind.Min: {
           const ap = n[node.inputA].primal
           const bp = n[node.inputB].primal
@@ -409,6 +417,12 @@ function backwardPass(nodes: TapeNode[], from: number): void {
       case OpKind.Log: {
         const xp = nodes[node.inputA].primal
         nodes[node.inputA].adjoint += a / xp
+        break
+      }
+
+      case OpKind.Sqrt: {
+        // d/dx sqrt(x) = 1 / (2 * sqrt(x))
+        nodes[node.inputA].adjoint += a / (2 * node.primal)
         break
       }
 
